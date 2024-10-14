@@ -114,12 +114,17 @@ int main()
     .Pin = GPIO_PIN_2,
     .Mode = GPIO_MODE_OUTPUT_PP,
   });
+  HAL_GPIO_Init(GPIOB, &(GPIO_InitTypeDef){
+    .Pin = GPIO_PIN_1,
+    .Mode = GPIO_MODE_OUTPUT_PP,
+  });
 
   while (0) {
-    GPIOF->BSRR = (1 << 16); delay_us(1000000);
-    GPIOF->BSRR = (1 <<  0); delay_us(1000000);
+    GPIOF->BSRR = (1 << 16); GPIOB->BSRR = (1 << 17); delay_us(1000000);
+    GPIOF->BSRR = (1 <<  0); GPIOB->BSRR = (1 <<  1); delay_us(1000000);
   }
   GPIOA->BSRR = (1 << 18);
+  GPIOB->BSRR = (1 <<  1);
 
   int count = 0;
   while (1) {
@@ -127,9 +132,9 @@ int main()
     int duty;
     if (count < 250) duty = 1500;
     else duty = 1000 + abs(375 - count) * 8;
-    duty = (count < 250 ? 1500 : 1750);
-    GPIOA->BSRR = (1 <<  2); delay_us(duty);
-    GPIOA->BSRR = (1 << 18); delay_us(19000 - duty);
+    // duty = (count < 250 ? 1500 : 1750);
+    GPIOB->BSRR = (1 << 17); delay_us(duty);
+    GPIOB->BSRR = (1 <<  1); delay_us(19000 - duty);
     if (++count == 500) count = 0;
   }
 }
