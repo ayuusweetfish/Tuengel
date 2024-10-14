@@ -45,6 +45,27 @@ static void swv_printf(const char *restrict fmt, ...)
 #define swv_printf(...)
 #endif
 
+static inline void spin_delay(uint32_t cycles)
+{
+  __asm__ volatile (
+    "   cmp %[cycles], #5\n"
+    "   ble 2f\n"
+    "   sub %[cycles], #5\n"
+    "   lsr %[cycles], #2\n"
+    "1: sub %[cycles], #1\n"
+    "   nop\n"
+    "   bne 1b\n"   // 2 cycles if taken
+    "2: \n"
+    : [cycles] "+l" (cycles)
+    : // No output
+    : "cc"
+  );
+}
+static inline void delay_us(uint32_t us)
+{
+  spin_delay(us * 4);
+}
+
 int main()
 {
   HAL_Init();
@@ -93,9 +114,23 @@ int main()
     .Pin = GPIO_PIN_2,
     .Mode = GPIO_MODE_OUTPUT_PP,
   });
+
+  while (0) {
+    GPIOF->BSRR = (1 << 16); delay_us(1000000);
+    GPIOF->BSRR = (1 <<  0); delay_us(1000000);
+  }
+  GPIOA->BSRR = (1 << 18);
+
+  int count = 0;
   while (1) {
-    GPIOF->BSRR = (1 <<  0); GPIOA->BSRR = (1 <<  2); HAL_Delay(200);
-    GPIOF->BSRR = (1 << 16); GPIOA->BSRR = (1 << 18); HAL_Delay(200);
+    GPIOF->BSRR = (1 << ((count < 250) ? 16 : 0));
+    int duty;
+    if (count < 250) duty = 1500;
+    else duty = 1000 + abs(375 - count) * 8;
+    duty = (count < 250 ? 1500 : 1750);
+    GPIOA->BSRR = (1 <<  2); delay_us(duty);
+    GPIOA->BSRR = (1 << 18); delay_us(19000 - duty);
+    if (++count == 500) count = 0;
   }
 }
 
