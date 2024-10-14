@@ -45,6 +45,8 @@ static void swv_printf(const char *restrict fmt, ...)
 #define swv_printf(...)
 #endif
 
+TIM_HandleTypeDef tim14;
+
 static inline void spin_delay(uint32_t cycles)
 {
   __asm__ volatile (
@@ -116,15 +118,37 @@ int main()
   });
   HAL_GPIO_Init(GPIOB, &(GPIO_InitTypeDef){
     .Pin = GPIO_PIN_1,
-    .Mode = GPIO_MODE_OUTPUT_PP,
+    .Alternate = GPIO_AF0_TIM14,
+    .Mode = GPIO_MODE_AF_PP,
+    .Pull = GPIO_NOPULL,
+    .Speed = GPIO_SPEED_FREQ_HIGH,
   });
+
+  __HAL_RCC_TIM14_CLK_ENABLE();
+  tim14 = (TIM_HandleTypeDef){
+    .Instance = TIM14,
+    .Init = {
+      .Prescaler = 2 - 1,  // 1 us per count (XXX: Why not 4?)
+      .CounterMode = TIM_COUNTERMODE_UP,
+      .Period = 20000 - 1,
+      .ClockDivision = TIM_CLOCKDIVISION_DIV1,
+      .RepetitionCounter = 0,
+    },
+  };
+  HAL_TIM_PWM_Init(&tim14);
+  TIM_OC_InitTypeDef tim14_ch1_oc_init = {
+    .OCMode = TIM_OCMODE_PWM2,
+    .Pulse = 0, // to be filled
+    .OCPolarity = TIM_OCPOLARITY_HIGH,
+  };
+  HAL_TIM_PWM_ConfigChannel(&tim14, &tim14_ch1_oc_init, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&tim14, TIM_CHANNEL_1);
 
   while (0) {
     GPIOF->BSRR = (1 << 16); GPIOB->BSRR = (1 << 17); delay_us(1000000);
     GPIOF->BSRR = (1 <<  0); GPIOB->BSRR = (1 <<  1); delay_us(1000000);
   }
   GPIOA->BSRR = (1 << 18);
-  GPIOB->BSRR = (1 <<  1);
 
   int count = 0;
   while (1) {
@@ -133,8 +157,8 @@ int main()
     if (count < 250) duty = 1500;
     else duty = 1000 + abs(375 - count) * 8;
     // duty = (count < 250 ? 1500 : 1750);
-    GPIOB->BSRR = (1 << 17); delay_us(duty);
-    GPIOB->BSRR = (1 <<  1); delay_us(19000 - duty);
+    TIM14->CCR1 = duty;
+    HAL_Delay(20);
     if (++count == 500) count = 0;
   }
 }
