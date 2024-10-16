@@ -45,7 +45,7 @@ static void swv_printf(const char *restrict fmt, ...)
 #define swv_printf(...)
 #endif
 
-TIM_HandleTypeDef tim14;
+TIM_HandleTypeDef tim17;
 
 static inline void spin_delay(uint32_t cycles)
 {
@@ -108,66 +108,54 @@ int main()
   clk_init.APB1CLKDivider = RCC_HCLK_DIV4;      // 4 MHz
   HAL_RCC_ClockConfig(&clk_init, FLASH_LATENCY_2);
 
-  HAL_GPIO_Init(GPIOF, &(GPIO_InitTypeDef){
-    .Pin = GPIO_PIN_0,
-    .Mode = GPIO_MODE_OUTPUT_PP,
-  });
   HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
-    .Pin = GPIO_PIN_2,
-    .Mode = GPIO_MODE_OUTPUT_PP,
-  });
-  HAL_GPIO_Init(GPIOB, &(GPIO_InitTypeDef){
-    .Pin = GPIO_PIN_1,
-    .Alternate = GPIO_AF0_TIM14,
+    .Pin = GPIO_PIN_7,
+    .Alternate = GPIO_AF5_TIM17,
     .Mode = GPIO_MODE_AF_PP,
     .Pull = GPIO_NOPULL,
     .Speed = GPIO_SPEED_FREQ_HIGH,
   });
 
-  __HAL_RCC_TIM14_CLK_ENABLE();
-  tim14 = (TIM_HandleTypeDef){
-    .Instance = TIM14,
+  __HAL_RCC_TIM17_CLK_ENABLE();
+  tim17 = (TIM_HandleTypeDef){
+    .Instance = TIM17,
     .Init = {
-      .Prescaler = 2 - 1,  // 1 us per count (XXX: Why not 4?)
+      .Prescaler = 16 - 1,  // 1 us per count
       .CounterMode = TIM_COUNTERMODE_UP,
       .Period = 20000 - 1,
       .ClockDivision = TIM_CLOCKDIVISION_DIV1,
       .RepetitionCounter = 0,
     },
   };
-  HAL_TIM_PWM_Init(&tim14);
-  TIM_OC_InitTypeDef tim14_ch1_oc_init = {
+  HAL_TIM_PWM_Init(&tim17);
+  TIM_OC_InitTypeDef tim17_ch1_oc_init = {
     .OCMode = TIM_OCMODE_PWM2,
     .Pulse = 0, // to be filled
     .OCPolarity = TIM_OCPOLARITY_HIGH,
   };
-  HAL_TIM_PWM_ConfigChannel(&tim14, &tim14_ch1_oc_init, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&tim14, TIM_CHANNEL_1);
-
-  while (0) {
-    GPIOF->BSRR = (1 << 16); GPIOB->BSRR = (1 << 17); delay_us(1000000);
-    GPIOF->BSRR = (1 <<  0); GPIOB->BSRR = (1 <<  1); delay_us(1000000);
-  }
-  GPIOA->BSRR = (1 << 18);
+  HAL_TIM_PWM_ConfigChannel(&tim17, &tim17_ch1_oc_init, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&tim17, TIM_CHANNEL_1);
 
 /*
 from math import *
 N=100
-print(', '.join('%d' % round(1500 + 600*(1+sin(i/N*2*pi))) for i in range(N)))
+print(', '.join('%d' % round(1500 + 200*(-cos(i/N*2*pi))) for i in range(N)))
 */
   static const uint16_t sin_lut[100] = {
-2100, 2138, 2175, 2212, 2249, 2285, 2321, 2355, 2389, 2421, 2453, 2482, 2511, 2537, 2562, 2585, 2607, 2626, 2643, 2658, 2671, 2681, 2689, 2695, 2699, 2700, 2699, 2695, 2689, 2681, 2671, 2658, 2643, 2626, 2607, 2585, 2562, 2537, 2511, 2482, 2453, 2421, 2389, 2355, 2321, 2285, 2249, 2212, 2175, 2138, 2100, 2062, 2025, 1988, 1951, 1915, 1879, 1845, 1811, 1779, 1747, 1718, 1689, 1663, 1638, 1615, 1593, 1574, 1557, 1542, 1529, 1519, 1511, 1505, 1501, 1500, 1501, 1505, 1511, 1519, 1529, 1542, 1557, 1574, 1593, 1615, 1638, 1663, 1689, 1718, 1747, 1779, 1811, 1845, 1879, 1915, 1951, 1988, 2025, 2062
+1300, 1300, 1302, 1304, 1306, 1310, 1314, 1319, 1325, 1331, 1338, 1346, 1354, 1363, 1373, 1382, 1393, 1404, 1415, 1426, 1438, 1450, 1463, 1475, 1487, 1500, 1513, 1525, 1537, 1550, 1562, 1574, 1585, 1596, 1607, 1618, 1627, 1637, 1646, 1654, 1662, 1669, 1675, 1681, 1686, 1690, 1694, 1696, 1698, 1700, 1700, 1700, 1698, 1696, 1694, 1690, 1686, 1681, 1675, 1669, 1662, 1654, 1646, 1637, 1627, 1618, 1607, 1596, 1585, 1574, 1562, 1550, 1537, 1525, 1513, 1500, 1487, 1475, 1463, 1450, 1438, 1426, 1415, 1404, 1393, 1382, 1373, 1363, 1354, 1346, 1338, 1331, 1325, 1319, 1314, 1310, 1306, 1304, 1302, 1300
   };
 
   int count = 0;
+  int tick = HAL_GetTick();
   while (1) {
-    GPIOF->BSRR = (1 << ((count < 50) ? 16 : 0));
     int duty;
     // duty = (count < 50 ? 500 : 2500);
-    duty = sin_lut[count];
-    TIM14->CCR1 = duty;
-    HAL_Delay(10);
-    if (++count == 100) count = 0;
+    duty = (count < 100 ? sin_lut[count] : sin_lut[0]);
+    TIM17->CCR1 = duty;
+    tick += 3;
+    while (HAL_GetTick() - tick > 0x80000000)
+      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    if (++count == 300) count = 0;
   }
 }
 
