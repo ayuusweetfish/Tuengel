@@ -1,0 +1,43 @@
+Packet format
+[1 byte] Payload length (n)
+[n byte] Payload
+[4 byte] CRC-32 0x04C11DB7 big-endian
+
+Serial - L0
+Ping
+  +00 [0x55] Ping
+  Response
+    +00 [0xAA] Pong
+    For n in 0~4
+    +4n+01
+    +4n+01 Bitmask  7~ 0
+    +4n+02 Bitmask 15~ 8
+    +4n+03 Bitmask 23~16
+Strike
+  +00 [0x00~0x3F] Out addr (L1)
+  +01 [0x00~0x3F] Out addr (U)
+  +02 [0x01] Strike
+  Response
+    +00 [0x01] Done
+
+L0 - L1
+Ping
+  +00 [0x55] Ping
+  Response
+    +00 [0xAA] Pong
+    +01 Bitmask  7~ 0
+    +02 Bitmask 15~ 8
+    +03 Bitmask 23~16
+Strike
+  +00 [0x00~0x3F] Out addr (U)
+  +01 [0x01] Strike
+  Response
+    +00 [0x01] Done
+
+L1 - U
+Ping
++00 [0x55] Ping
+  Response
+    +00 [0xAA] Pong
+Strike
+  +00 [0x01] Strike
