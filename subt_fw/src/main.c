@@ -10,6 +10,7 @@
 #define SERIAL_PRINT 0
 #define ACT_1 28
 #define ACT_2 29
+#define ACT_1 25
 
 // ============ Debug output ============
 
@@ -65,6 +66,8 @@ int my_printf(const char *restrict fmt, ...)
 
 static void usb_serial_in_cb(__attribute__((unused)) void *_a)
 {
+  uint8_t c = stdio_getchar_timeout_us(0);
+  printf("[!! %d %c]", (int)c, (int)c);
 }
 
 int main()
@@ -91,7 +94,7 @@ int main()
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
     gpio_put(ACT_2, stdio_usb_connected());
-    printf("run%s", parity ? " " : "\r\n");
+    printf("run %d%s", (int)stdio_usb_connected(), parity ? " " : "\r\n");
     sleep_ms(200);
   }
 }
