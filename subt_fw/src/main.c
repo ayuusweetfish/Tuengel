@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "../../misc/crc32/crc32.c"
+
 #define SERIAL_PRINT 0
 #define ACT_1 28
 #define ACT_2 29
@@ -64,10 +66,41 @@ int my_printf(const char *restrict fmt, ...)
   return 0;
 }
 
+static bool serial_rx_started = false;
+static uint16_t serial_rx_len = 0;
+static uint16_t serial_rx_ptr = 0;
+static uint8_t serial_rx_buf[255 + 4];
+static inline void serial_rx_reset()
+{
+  serial_rx_started = false;
+  serial_rx_len = serial_rx_ptr = 0;
+}
+static inline void serial_rx_byte(uint8_t x)
+{
+  if (!serial_rx_started) {
+    serial_rx_started = true;
+    serial_rx_len = x;
+  } else {
+    serial_rx_buf[serial_rx_ptr++] = x;
+    if (serial_rx_ptr == serial_rx_len + 4) {
+      uint32_t s = crc32_bulk(serial_rx_buf, serial_rx_len + 4);
+      printf("received [%d]! s = %08x [%d]\n", serial_rx_len, s, s == 0x2144DF1C);
+      serial_rx_reset();
+    }
+    printf("[!! %d %c]", (int)x, (int)x);
+  }
+}
+
 static void usb_serial_in_cb(__attribute__((unused)) void *_a)
 {
-  uint8_t c = stdio_getchar_timeout_us(0);
-  printf("[!! %d %c]", (int)c, (int)c);
+  static uint32_t last_rx = (uint32_t)-1000;
+  uint32_t t = to_ms_since_boot(get_absolute_time());
+  if (t - last_rx >= 1000) serial_rx_reset();
+  last_rx = t;
+
+  int c = stdio_getchar_timeout_us(0);
+  assert(c != PICO_ERROR_TIMEOUT && c >= 0 && c < 255);
+  serial_rx_byte((uint8_t)c);
 }
 
 int main()
