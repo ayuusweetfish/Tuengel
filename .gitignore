@@ -1,3 +1,4 @@
 **/fp-info-cache
 **/*.bak
 **/~*.lck
+subt_fw/build/

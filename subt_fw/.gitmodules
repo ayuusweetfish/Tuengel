@@ -1,0 +1,2 @@
+[submodule "subt_fw/pico-sdk"]
+	shallow = true

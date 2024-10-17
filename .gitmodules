@@ -1,0 +1,4 @@
+[submodule "subt_fw/pico-sdk"]
+	path = subt_fw/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk.git
+    branch = 2.0.0
