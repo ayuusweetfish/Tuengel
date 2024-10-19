@@ -1,3 +1,4 @@
+#include "pico/critical_section.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
@@ -68,44 +69,44 @@ int my_printf(const char *restrict fmt, ...)
 
 static bool serial_msg_parity = 0;
 
-static bool serial_rx_started = false;
-static uint16_t serial_rx_len = 0;
-static uint16_t serial_rx_ptr = 0;
-static uint8_t serial_rx_buf[255 + 4];
-static inline void serial_rx_reset()
+static inline void serial_rx_block(const uint8_t *buf, uint32_t size)
 {
-  serial_rx_started = false;
-  serial_rx_len = serial_rx_ptr = 0;
-}
-static inline void serial_rx_byte(uint64_t t, uint8_t x)
-{
-  static const uint64_t max_delay = 1000000; // 100 ms
-  static uint64_t last_rx = -max_delay;
-  if (t - last_rx >= max_delay) serial_rx_reset();
-  last_rx = t;
-
-  if (!serial_rx_started) {
-    serial_rx_started = true;
-    serial_rx_len = x;
-  } else {
-    static int total = 0;
-    // printf("[%d %d/%d, %d]\n", (int)++total, (int)serial_rx_ptr, (int)serial_rx_len, (int)x);
-    // stdio_flush();
-    serial_rx_buf[serial_rx_ptr++] = x;
-    if (serial_rx_ptr == serial_rx_len + 4) {
-      uint32_t s = crc32_bulk(serial_rx_buf, serial_rx_len + 4);
-      printf("received [%d]! s = %08x [%d]\n", serial_rx_len, s, s == 0x2144DF1C);
-      stdio_flush();
-      if (s == 0x2144DF1C) serial_msg_parity ^= 1;
-      serial_rx_reset();
-    }
+  uint32_t i = 0;
+  while (i < size) {
+    uint8_t len = buf[i++];
+    if (i + len + 4 > size) break;  // Insufficient length
+    uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
+    printf("received [%d]! s = %08x [%d]\n", (int)len, s, s == 0x2144DF1C);
+    stdio_flush();
+    if (s == 0x2144DF1C) serial_msg_parity ^= 1;
   }
 }
 
-static volatile bool usb_serial_nonempty = false;
+static critical_section_t serial_crits;
+static uint16_t serial_rx_ptr = 0;
+static uint8_t serial_rx_buf[1024];
 static void usb_serial_in_cb(__attribute__((unused)) void *_a)
 {
-  usb_serial_nonempty = true;
+  critical_section_enter_blocking(&serial_crits);
+
+  static const uint64_t max_delay = 100000; // 100 ms
+  static uint64_t last_rx = -max_delay;
+  uint64_t t = to_us_since_boot(get_absolute_time());
+  if (t - last_rx >= max_delay) serial_rx_ptr = 0;
+  last_rx = t;
+
+  while (true) {
+    int c = stdio_getchar_timeout_us(0);
+    if (c == PICO_ERROR_TIMEOUT) break;
+    assert(c >= 0 && c < 255);
+    if (serial_rx_ptr >= 1024) {
+      // XXX: Print message?
+      break;
+    }
+    serial_rx_buf[serial_rx_ptr++] = (uint8_t)c;
+  }
+
+  critical_section_exit(&serial_crits);
 }
 
 int main()
@@ -113,6 +114,8 @@ int main()
   // 132 MHz
   // python pico-sdk/src/rp2_common/hardware_clocks/scripts/vcocalc.py 132
   set_sys_clock_pll(1584000000, 6, 2);
+
+  critical_section_init(&serial_crits);
 
   stdio_usb_init();
   stdio_set_translate_crlf(&stdio_usb, false);
@@ -136,15 +139,9 @@ int main()
     // gpio_put(ACT_2, stdio_usb_connected());
     // printf("run %d%s", (int)stdio_usb_connected(), parity ? " " : "\r\n");
     sleep_ms(2);
-    if (usb_serial_nonempty) {
-      usb_serial_nonempty = false;
-      uint64_t t = to_us_since_boot(get_absolute_time());
-      while (true) {
-        int c = stdio_getchar_timeout_us(0);
-        if (c == PICO_ERROR_TIMEOUT) break;
-        assert(c >= 0 && c < 255);
-        serial_rx_byte(t, (uint8_t)c);
-      }
-    }
+    critical_section_enter_blocking(&serial_crits);
+    serial_rx_block(serial_rx_buf, serial_rx_ptr);
+    serial_rx_ptr = 0;
+    critical_section_exit(&serial_crits);
   }
 }
