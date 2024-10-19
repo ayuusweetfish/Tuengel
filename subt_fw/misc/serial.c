@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 int set_interface_attribs(int fd)
@@ -34,7 +35,7 @@ int set_interface_attribs(int fd)
   tty.c_oflag &= ~OPOST;
 
   /* fetch bytes as they become available */
-  tty.c_cc[VMIN] = 1;
+  tty.c_cc[VMIN] = 0;
   tty.c_cc[VTIME] = 1;
 
   if (tcsetattr(fd, TCSANOW, &tty) != 0) {
@@ -63,11 +64,16 @@ int main()
   }
   set_interface_attribs(fd);
 
-  const char *s = "\x09" "123456789" "\x26\x39\xf4\xcb";
-  serial_write(fd, s, strlen(s));
+  const char s[] = "\x09" "123456789" "\x26\x39\xf4\xcb";
+  time_t t0 = time(NULL);
 
   do {
-    unsigned char buf[80];
+    if (time(NULL) - t0 >= 1) {
+      serial_write(fd, s, sizeof(s) - 1);
+      printf("[written]\n");
+      t0 = time(NULL);
+    }
+    unsigned char buf[4096];
     int rdlen = read(fd, buf, sizeof(buf) - 1);
     if (rdlen > 0) {
       buf[rdlen] = 0;
@@ -75,7 +81,7 @@ int main()
     } else if (rdlen < 0) {
       printf("Error from read: %d: %s\n", rdlen, strerror(errno));
     } else {  /* rdlen == 0 */
-      printf("Timeout from read\n");
+      // Timeout
     }         
     /* repeat read to get full message */
   } while (1);
