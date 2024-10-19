@@ -9,10 +9,9 @@ Ping
   Response
     +00 [0xAA] Pong
     For n in 0~4
-    +4n+01
-    +4n+01 Bitmask  7~ 0
-    +4n+02 Bitmask 15~ 8
-    +4n+03 Bitmask 23~16
+    +3n+01 Bitmask  7~ 0
+    +3n+02 Bitmask 15~ 8
+    +3n+03 Bitmask 23~16
 Strike
   +00 [0x00~0x3F] Out addr (L1)
   +01 [0x00~0x3F] Out addr (U)

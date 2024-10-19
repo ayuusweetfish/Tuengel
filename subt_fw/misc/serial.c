@@ -60,6 +60,7 @@ static inline const uint8_t *rx(uint8_t *o_len)
     *o_len = len;
     return rx_buf;
   } else {
+    printf("Error: Incorrect checksum\n");
     *o_len = 0;
     return NULL;
   }
@@ -69,7 +70,7 @@ int main(int argc, char **argv)
 {
   check(sp_get_port_by_name("/dev/cu.usbmodem141301", &port));
   check(sp_open(port, SP_MODE_READ_WRITE));
-  check(sp_set_baudrate(port, 115200));
+  check(sp_set_baudrate(port, 921600));
   check(sp_set_bits(port, 8));
   check(sp_set_parity(port, SP_PARITY_NONE));
   check(sp_set_stopbits(port, 1));
