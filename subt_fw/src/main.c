@@ -69,17 +69,32 @@ int my_printf(const char *restrict fmt, ...)
 
 static bool serial_msg_parity = 0;
 
-static inline void serial_rx_process_cmd(const uint8_t *buf, uint32_t size)
+static inline void serial_tx(const uint8_t *buf, uint8_t len)
+{
+  stdio_putchar_raw(len);
+  stdio_put_string(buf, len, false, false);
+  uint32_t s = crc32_bulk(buf, len);
+  uint8_t s8[4] = {
+    (uint8_t)(s >>  0),
+    (uint8_t)(s >>  8),
+    (uint8_t)(s >> 16),
+    (uint8_t)(s >> 24),
+  };
+  stdio_put_string(s8, 4, false, false);
+  stdio_flush();
+}
+
+static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
 {
   if (buf[0] == 0x55) {
     // Ping
-    uint8_t tx[] = {0x01, 0xAA, 0x7b, 0xa5, 0x01, 0xe4};
-    stdio_put_string(tx, 6, false, false);
-    stdio_flush();
+    uint8_t resp[1];
+    resp[0] = 0xAA;
+    serial_tx(resp, 1);
   }
 }
 
-static inline void serial_rx_block(const uint8_t *buf, uint32_t size)
+static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
 {
   uint32_t i = 0;
   while (i < size) {
@@ -149,7 +164,7 @@ int main()
     // gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
     critical_section_enter_blocking(&serial_crits);
-    serial_rx_block(serial_rx_buf, serial_rx_ptr);
+    serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
     serial_rx_ptr = 0;
     critical_section_exit(&serial_crits);
   }
