@@ -2,3 +2,6 @@
 	path = subt_fw/pico-sdk
 	url = https://github.com/raspberrypi/pico-sdk.git
     branch = 2.0.0
+[submodule "subt_fw/misc/libserialport"]
+	path = subt_fw/misc/libserialport
+	url = git://sigrok.org/libserialport
