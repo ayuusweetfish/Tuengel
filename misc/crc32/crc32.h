@@ -1,5 +1,5 @@
-#include <stdint.h>
-#include <stdlib.h>
+#include <stdint.h> // uint*_t
+#include <stdlib.h> // size_t
 
 // LSB-first CRC-32
 static const uint32_t crc32_table[256] = {
@@ -17,11 +17,12 @@ static inline uint32_t crc32_bulk(const uint8_t *a, size_t n)
 }
 
 #ifdef CRC32_TESTRUN
+// cc -x c % -DCRC32_TESTRUN -O2
 #include <stdio.h>
 
 int main()
 {
-  printf("%08x\n", crc32_bulk((const uint8_t *)"123456789", 9));
+  printf("%08x\n", crc32_bulk((const uint8_t *)"123456789", 9));  // cbf43926
   return 0;
 }
 #endif

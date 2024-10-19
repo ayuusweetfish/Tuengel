@@ -64,7 +64,9 @@ int main()
   }
   set_interface_attribs(fd);
 
-  const char s[] = "\x09" "123456789" "\x26\x39\xf4\xcb";
+  const char s[] = "\x00\x00"
+                   "\x01" "\x55" "\xf6\x4a\x03\xc9"
+                   "\x02" "\x55\x01" "\x78\x8b\x12\xf1";
   time_t t0 = time(NULL);
 
   do {
@@ -77,7 +79,8 @@ int main()
     int rdlen = read(fd, buf, sizeof(buf) - 1);
     if (rdlen > 0) {
       buf[rdlen] = 0;
-      fputs((const char *)buf, stdout);
+      for (int i = 0; i < rdlen; i++) printf(" %02x", (int)buf[i]);
+      putchar('\n');
     } else if (rdlen < 0) {
       printf("Error from read: %d: %s\n", rdlen, strerror(errno));
     } else {  /* rdlen == 0 */

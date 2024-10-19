@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../../misc/crc32/crc32.c"
+#include "../../misc/crc32/crc32.h"
 
 #define SERIAL_PRINT 0
 #define ACT_1 28
@@ -69,16 +69,26 @@ int my_printf(const char *restrict fmt, ...)
 
 static bool serial_msg_parity = 0;
 
+static inline void serial_rx_process_cmd(const uint8_t *buf, uint32_t size)
+{
+  if (buf[0] == 0x55) {
+    // Ping
+    uint8_t tx[] = {0x01, 0xAA, 0x7b, 0xa5, 0x01, 0xe4};
+    stdio_put_string(tx, 6, false, false);
+    stdio_flush();
+  }
+}
+
 static inline void serial_rx_block(const uint8_t *buf, uint32_t size)
 {
   uint32_t i = 0;
   while (i < size) {
     uint8_t len = buf[i++];
+    if (len == 0) continue; // Stray zeros, do not verify checksum
     if (i + len + 4 > size) break;  // Insufficient length
     uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
-    printf("received [%d]! s = %08x [%d]\n", (int)len, s, s == 0x2144DF1C);
-    stdio_flush();
-    if (s == 0x2144DF1C) serial_msg_parity ^= 1;
+    if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
+    i += len + 4;
   }
 }
 
@@ -137,7 +147,6 @@ int main()
     if (++count == 100) { count = 0; parity ^= 1; }
     gpio_put(ACT_1, (parity | stdio_usb_connected()) ^ serial_msg_parity);
     // gpio_put(ACT_2, stdio_usb_connected());
-    // printf("run %d%s", (int)stdio_usb_connected(), parity ? " " : "\r\n");
     sleep_ms(2);
     critical_section_enter_blocking(&serial_crits);
     serial_rx_block(serial_rx_buf, serial_rx_ptr);
