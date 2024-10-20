@@ -44,11 +44,11 @@ static inline const uint8_t *rx(uint8_t *o_len)
   int n_rx;
   uint8_t len;
 
+restart:
   n_rx = check(sp_blocking_read(port, &len, 1, 1000));
   ensure(n_rx == 1);
   if (len == 0) {
-    *o_len = 0;
-    return NULL;
+    goto restart;
   }
 
   static uint8_t rx_buf[255 + 4];
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  int baud_rate = 921600;
+  int baud_rate = 115200;
   if (argc >= 3) {
     baud_rate = (int)strtol(argv[2], NULL, 10);
   }

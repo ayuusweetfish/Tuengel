@@ -23,9 +23,18 @@ static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
   return *((io_rw_8 *)&pio->rxf[sm] + 3);
 }
 
-static bool serial_msg_parity = 0;
+static uint32_t sm_uart_tx = 0;
+static uint32_t sm_uart_rx = 1;
 
-static inline void serial_tx(const uint8_t *buf, uint8_t len)
+static bool serial_msg_parity = 0;
+static enum {
+  SERIAL_CMD_SRC_USB,
+  SERIAL_CMD_SRC_RS422_SERIAL,
+} serial_rx_last_cmd_source = SERIAL_CMD_SRC_USB;
+
+static const uint8_t PORT_USB = 0xfe;
+static const uint8_t PORT_IN = 0xff;
+static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
 {
   uint32_t s = crc32_bulk(buf, len);
   uint8_t s8[4] = {
@@ -35,14 +44,25 @@ static inline void serial_tx(const uint8_t *buf, uint8_t len)
     (uint8_t)(s >> 24),
   };
 
-  stdio_putchar_raw(len);
-  stdio_put_string(buf, len, false, false);
-  stdio_put_string(s8, 4, false, false);
-  stdio_flush();
+  if (port == PORT_USB) {
+    stdio_putchar_raw(len);
+    stdio_put_string(buf, len, false, false);
+    stdio_put_string(s8, 4, false, false);
+    stdio_flush();
+  } else {
+    pio_sm_put_blocking(pio0, sm_uart_tx, len);
+    for (uint32_t i = 0; i < len; i++)
+      pio_sm_put_blocking(pio0, sm_uart_tx, buf[i]);
+    for (uint32_t i = 0; i < 4; i++)
+      pio_sm_put_blocking(pio0, sm_uart_tx, s8[i]);
+  }
 }
 
 static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
 {
+  uint8_t serial_cmd_port =
+    (serial_rx_last_cmd_source == SERIAL_CMD_SRC_USB ? PORT_USB : PORT_IN);
+
   if (buf[0] == 0x55) {
     // Ping
     uint8_t resp[16] = { 0 };
@@ -51,7 +71,7 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
     resp[2] = 'e';
     resp[3] = 's';
     resp[4] = 't';
-    serial_tx(resp, 16);
+    serial_tx(serial_cmd_port, resp, 16);
   }
 }
 
@@ -63,6 +83,8 @@ static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
     if (len == 0) continue; // Stray zeros, do not verify checksum
     if (i + len + 4 > size) break;  // Insufficient length
     uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
+    // Debug use only
+    // for (int j = 0; j < len + 4; j++) printf(" %02x", (int)buf[i + j]); printf("\r\n"); stdio_flush();
     if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
     i += len + 4;
   }
@@ -98,22 +120,24 @@ static void usb_serial_in_cb(__attribute__((unused)) void *_a)
     assert(c >= 0 && c < 255);
     serial_rx_push_byte((uint8_t)c);
   }
+  serial_rx_last_cmd_source = 0;  // USB serial
 
   critical_section_exit(&serial_crits);
 }
 
-static uint32_t sm_uart_tx = 0;
-static uint32_t sm_uart_rx = 1;
-
 static void pio0_irq0_handler()
 {
   if (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
+    critical_section_enter_blocking(&serial_crits);
+
     serial_rx_reset_if_timeout();
     while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
       uint8_t c = pio_sm_get_8(pio0, sm_uart_rx);
       serial_rx_push_byte(c);
-      pio_sm_put_blocking(pio0, sm_uart_tx, c);
     }
+    serial_rx_last_cmd_source = 1;  // RS-422 serial
+
+    critical_section_exit(&serial_crits);
   }
 }
 
