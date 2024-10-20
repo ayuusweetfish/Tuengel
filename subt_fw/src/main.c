@@ -218,7 +218,7 @@ int main()
     static int count = 0;
     if (++count == 100) { count = 0; parity ^= 1; }
     gpio_put(ACT_1, (parity | stdio_usb_connected()));
-    // gpio_put(ACT_2, stdio_usb_connected());
+    gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
 
     // Process commands serial buffer
