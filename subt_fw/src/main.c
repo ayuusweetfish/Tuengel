@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "uart.pio.h"
+
 #include "../../misc/crc32/crc32.h"
 #include "debug_print.h"
 

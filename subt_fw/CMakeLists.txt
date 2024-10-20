@@ -8,6 +8,7 @@ add_executable(cases-subt)
 target_compile_definitions(cases-subt PRIVATE PICO_FLASH_SIZE_BYTES=16777216)
 target_include_directories(cases-subt PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
 
+pico_generate_pio_header(cases-subt ${CMAKE_CURRENT_LIST_DIR}/src/uart.pio)
 target_sources(cases-subt PRIVATE src/main.c)
 target_link_libraries(cases-subt
   pico_stdio
