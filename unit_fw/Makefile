@@ -214,6 +214,11 @@ else
 	@echo "FLASH_PROGRM is invalid\n"
 endif
 
+erase:
+ifeq ($(FLASH_PROGRM),pyocd)
+	$(PYOCD_EXE) erase -t $(PYOCD_DEVICE) --chip --config $(TOP)/debug/pyocd.yaml
+endif
+
 print-uid:
 ifeq ($(FLASH_PROGRM),pyocd)
 	$(PYOCD_EXE) cmd -c 'read8 0x1fff0e00 16' -t $(PYOCD_DEVICE) --config ./debug/pyocd.yaml

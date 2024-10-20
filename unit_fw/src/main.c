@@ -72,18 +72,8 @@ int main(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  HAL_GPIO_Init(GPIOB, &(GPIO_InitTypeDef){
-    .Pin = GPIO_PIN_6,
-    .Mode = GPIO_MODE_AF_PP,
-    .Alternate = GPIO_AF0_SWJ,
-    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
-  });
-  HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
-    .Pin = GPIO_PIN_2,
-    .Mode = GPIO_MODE_AF_PP,
-    .Alternate = GPIO_AF0_SWJ,
-    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
-  });
+  // PA2 - SWCLK, PB6 - SWDIO with correct pull-up/-down upon reset
+  // Reference manual v. 1.0 p. 79 (zh) / 77 (en)
 
   HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
     .Pin = GPIO_PIN_6,
