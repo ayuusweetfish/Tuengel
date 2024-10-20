@@ -18,6 +18,11 @@
 #define ACT_2 29
 #define ACT_1 25
 
+static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
+{
+  return *((io_rw_8 *)&pio->rxf[sm] + 3);
+}
+
 static bool serial_msg_parity = 0;
 
 static inline void serial_tx(const uint8_t *buf, uint8_t len)
@@ -108,6 +113,14 @@ int main()
   my_print_init();
   my_printf("sys clk %u\n", clock_get_hz(clk_sys));
 
+  uint32_t sm_uart_tx_offset = pio_add_program(pio0, &uart_tx_program);
+  uint32_t sm_uart_tx = pio_claim_unused_sm(pio0, true);
+  uart_tx_program_init(pio0, sm_uart_tx, sm_uart_tx_offset, 3, 115200);
+
+  uint32_t sm_uart_rx_offset = pio_add_program(pio0, &uart_rx_program);
+  uint32_t sm_uart_rx = pio_claim_unused_sm(pio0, true);
+  uart_rx_program_init(pio0, sm_uart_rx, sm_uart_rx_offset, 4, 115200);
+
   while (1) {
     static bool parity = 0;
     static int count = 0;
@@ -119,5 +132,8 @@ int main()
     serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
     serial_rx_ptr = 0;
     critical_section_exit(&serial_crits);
+    pio_sm_put_blocking(pio0, sm_uart_tx, 0x41);
+    while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx))
+      pio_sm_put_blocking(pio0, sm_uart_tx, pio_sm_get_8(pio0, sm_uart_rx));
   }
 }
