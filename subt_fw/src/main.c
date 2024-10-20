@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h> // memmove
 
 #include "uart.pio.h"
 
@@ -75,19 +76,20 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
   }
 }
 
-static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
+// Process a block of data
+// Returns the number of bytes processed
+static inline uint32_t serial_rx_bulk(const uint8_t *buf, uint32_t size)
 {
   uint32_t i = 0;
   while (i < size) {
     uint8_t len = buf[i++];
     if (len == 0) continue; // Stray zeros, do not verify checksum
-    if (i + len + 4 > size) break;  // Insufficient length
+    if (i + len + 4 > size) { i--; break; } // Insufficient length
     uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
-    // Debug use only
-    // for (int j = 0; j < len + 4; j++) printf(" %02x", (int)buf[i + j]); printf("\r\n"); stdio_flush();
     if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
     i += len + 4;
   }
+  return i;
 }
 
 static critical_section_t serial_crits;
@@ -181,8 +183,13 @@ int main()
     // gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
     critical_section_enter_blocking(&serial_crits);
-    serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
-    serial_rx_ptr = 0;
+    uint32_t p = serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
+    if (p == serial_rx_ptr) {
+      serial_rx_ptr = 0;
+    } else {
+      memmove(serial_rx_buf, serial_rx_buf + p, serial_rx_ptr - p);
+      serial_rx_ptr = (serial_rx_ptr - p);
+    }
     critical_section_exit(&serial_crits);
   }
 }

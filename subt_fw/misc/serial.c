@@ -48,11 +48,13 @@ restart:
   n_rx = check(sp_blocking_read(port, &len, 1, 1000));
   ensure(n_rx == 1);
   if (len == 0) {
+    printf("(ignoring empty packet)\n");
     goto restart;
   }
 
   static uint8_t rx_buf[255 + 4];
   n_rx = check(sp_blocking_read(port, rx_buf, len + 4, 1000));
+  printf("[%02x]", n_rx); for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
   ensure(n_rx == len + 4);
 
   uint32_t s = crc32_bulk(rx_buf, len + 4);
@@ -85,6 +87,8 @@ int main(int argc, char **argv)
   check(sp_set_parity(port, SP_PARITY_NONE));
   check(sp_set_stopbits(port, 1));
   check(sp_set_flowcontrol(port, SP_FLOWCONTROL_NONE));
+
+  sp_flush(port, SP_BUF_BOTH);
 
   tx((uint8_t *)"\x55", 1);
   uint8_t resp_len;
