@@ -42,7 +42,6 @@ static inline void uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin_
   sm_config_set_clkdiv(&c, div);
 
   pio_sm_init(pio, sm, offset, &c);
-  pio_sm_set_enabled(pio, sm, true);
 }
 
 static inline void uart_tx_program_putc(PIO pio, uint sm, char c) {
@@ -90,6 +89,5 @@ static inline void uart_rx_program_init(PIO pio, uint sm, uint offset, uint pin,
   sm_config_set_clkdiv(&c, div);
   
   pio_sm_init(pio, sm, offset, &c);
-  pio_sm_set_enabled(pio, sm, true);
 }
 %}

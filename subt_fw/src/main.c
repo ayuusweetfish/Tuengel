@@ -24,17 +24,35 @@ static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
   return *((io_rw_8 *)&pio->rxf[sm] + 3);
 }
 
-static uint32_t sm_uart_tx = 0;
-static uint32_t sm_uart_rx = 1;
+static const uint8_t PIN_UPSTRM_DIR = 0;
+static const uint8_t PIN_UPSTRM_DATA = 1;
+static uint32_t sm_uart_upstrm_tx = 0;
+static uint32_t sm_uart_upstrm_rx = 1;
 
-static bool serial_msg_parity = 0;
+static inline void upstrm_dir(bool tx)
+{
+  if (tx) {
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
+    gpio_put(PIN_UPSTRM_DIR, 1);
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, true);
+  } else {
+    while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
+    sleep_us(100);  // 10 bits time @ 119200 bps = 84 us. TODO: Not optimal
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
+    gpio_put(PIN_UPSTRM_DIR, 0);
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, true);
+  }
+}
+
+// Where does the last command come from?
+// (This does not change during normal operation.)
 static enum {
-  SERIAL_CMD_SRC_USB,
-  SERIAL_CMD_SRC_RS422_SERIAL,
+  SERIAL_CMD_SRC_USB,     // USB serial
+  SERIAL_CMD_SRC_UPSTRM,  // Upstream-facing RS-422 serial
 } serial_rx_last_cmd_source = SERIAL_CMD_SRC_USB;
 
 static const uint8_t PORT_USB = 0xfe;
-static const uint8_t PORT_IN = 0xff;
+static const uint8_t PORT_UPSTRM = 0xff;
 static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
 {
   uint32_t s = crc32_bulk(buf, len);
@@ -50,19 +68,21 @@ static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
     stdio_put_string(buf, len, false, false);
     stdio_put_string(s8, 4, false, false);
     stdio_flush();
-  } else {
-    pio_sm_put_blocking(pio0, sm_uart_tx, len);
+  } else if (port == PORT_UPSTRM) {
+    upstrm_dir(1);
+    pio_sm_put_blocking(pio0, sm_uart_upstrm_tx, len);
     for (uint32_t i = 0; i < len; i++)
-      pio_sm_put_blocking(pio0, sm_uart_tx, buf[i]);
+      pio_sm_put_blocking(pio0, sm_uart_upstrm_tx, buf[i]);
     for (uint32_t i = 0; i < 4; i++)
-      pio_sm_put_blocking(pio0, sm_uart_tx, s8[i]);
+      pio_sm_put_blocking(pio0, sm_uart_upstrm_tx, s8[i]);
+    upstrm_dir(0);
   }
 }
 
 static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
 {
   uint8_t serial_cmd_port =
-    (serial_rx_last_cmd_source == SERIAL_CMD_SRC_USB ? PORT_USB : PORT_IN);
+    (serial_rx_last_cmd_source == SERIAL_CMD_SRC_USB ? PORT_USB : PORT_UPSTRM);
 
   if (buf[0] == 0x55) {
     // Ping
@@ -76,20 +96,32 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
   }
 }
 
-// Process a block of data
+// Take to a separate buffer
 // Returns the number of bytes processed
-static inline uint32_t serial_rx_bulk(const uint8_t *buf, uint32_t size)
+static inline uint32_t serial_rx_take(uint8_t *restrict buf, uint32_t size, uint8_t *restrict out_buf)
 {
   uint32_t i = 0;
   while (i < size) {
     uint8_t len = buf[i++];
     if (len == 0) continue; // Stray zeros, do not verify checksum
     if (i + len + 4 > size) { i--; break; } // Insufficient length
+    i += len + 4;
+  }
+  memmove(out_buf, buf, i);
+  memmove(buf, buf + i, size - i);
+  return i;
+}
+// Process a block of data
+static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
+{
+  uint32_t i = 0;
+  while (i < size) {
+    uint8_t len = buf[i++];
+    if (len == 0) continue; // Stray zeros, do not verify checksum
     uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
     if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
     i += len + 4;
   }
-  return i;
 }
 
 static critical_section_t serial_crits;
@@ -122,22 +154,22 @@ static void usb_serial_in_cb(__attribute__((unused)) void *_a)
     assert(c >= 0 && c < 255);
     serial_rx_push_byte((uint8_t)c);
   }
-  serial_rx_last_cmd_source = 0;  // USB serial
+  serial_rx_last_cmd_source = SERIAL_CMD_SRC_USB;
 
   critical_section_exit(&serial_crits);
 }
 
 static void pio0_irq0_handler()
 {
-  if (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
+  if (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_upstrm_rx)) {
     critical_section_enter_blocking(&serial_crits);
 
     serial_rx_reset_if_timeout();
-    while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
-      uint8_t c = pio_sm_get_8(pio0, sm_uart_rx);
+    while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_upstrm_rx)) {
+      uint8_t c = pio_sm_get_8(pio0, sm_uart_upstrm_rx);
       serial_rx_push_byte(c);
     }
-    serial_rx_last_cmd_source = 1;  // RS-422 serial
+    serial_rx_last_cmd_source = SERIAL_CMD_SRC_UPSTRM;
 
     critical_section_exit(&serial_crits);
   }
@@ -165,31 +197,37 @@ int main()
   my_print_init();
   my_printf("sys clk %u\n", clock_get_hz(clk_sys));
 
+  gpio_init(PIN_UPSTRM_DIR); gpio_set_dir(PIN_UPSTRM_DIR, GPIO_OUT);
+  gpio_put(PIN_UPSTRM_DIR, 0);
+
   irq_set_exclusive_handler(PIO0_IRQ_0, pio0_irq0_handler);
   irq_set_enabled(PIO0_IRQ_0, true);
 
-  uint32_t sm_uart_tx_offset = pio_add_program(pio0, &uart_tx_program);
-  uart_tx_program_init(pio0, sm_uart_tx, sm_uart_tx_offset, 3, 115200);
+  uint32_t uart_tx_program_offset = pio_add_program(pio0, &uart_tx_program);
+  uint32_t uart_rx_program_offset = pio_add_program(pio0, &uart_rx_program);
 
-  uint32_t sm_uart_rx_offset = pio_add_program(pio0, &uart_rx_program);
-  uart_rx_program_init(pio0, sm_uart_rx, sm_uart_rx_offset, 4, 115200);
+  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 3, 115200);
+  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 4, 115200);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
+
+  upstrm_dir(0);
 
   while (1) {
     static bool parity = 0;
     static int count = 0;
     if (++count == 100) { count = 0; parity ^= 1; }
-    gpio_put(ACT_1, (parity | stdio_usb_connected()) ^ serial_msg_parity);
+    gpio_put(ACT_1, (parity | stdio_usb_connected()));
     // gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
+
+    // Process commands serial buffer
+    // Move the bytes out to a local buffer to minimise critical section length
+    // as well as enable interrupts during processing
+    static uint8_t serial_rx_buf_local[sizeof serial_rx_buf];
     critical_section_enter_blocking(&serial_crits);
-    uint32_t p = serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
-    if (p == serial_rx_ptr) {
-      serial_rx_ptr = 0;
-    } else {
-      memmove(serial_rx_buf, serial_rx_buf + p, serial_rx_ptr - p);
-      serial_rx_ptr = (serial_rx_ptr - p);
-    }
+    uint32_t len = serial_rx_take(serial_rx_buf, serial_rx_ptr, serial_rx_buf_local);
+    serial_rx_ptr -= len;
     critical_section_exit(&serial_crits);
+    serial_rx_bulk(serial_rx_buf_local, len);
   }
 }

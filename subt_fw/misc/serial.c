@@ -52,9 +52,10 @@ restart:
     goto restart;
   }
 
+  printf("[%02x]\n", len);
   static uint8_t rx_buf[255 + 4];
   n_rx = check(sp_blocking_read(port, rx_buf, len + 4, 1000));
-  printf("[%02x]", n_rx); for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
+  for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
   ensure(n_rx == len + 4);
 
   uint32_t s = crc32_bulk(rx_buf, len + 4);
