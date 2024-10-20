@@ -47,6 +47,10 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
     // Ping
     uint8_t resp[16] = { 0 };
     resp[0] = 0xAA;
+    resp[1] = 't';
+    resp[2] = 'e';
+    resp[3] = 's';
+    resp[4] = 't';
     serial_tx(resp, 16);
   }
 }
@@ -67,28 +71,50 @@ static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
 static critical_section_t serial_crits;
 static uint16_t serial_rx_ptr = 0;
 static uint8_t serial_rx_buf[1024];
-static void usb_serial_in_cb(__attribute__((unused)) void *_a)
+static inline void serial_rx_reset_if_timeout()
 {
-  critical_section_enter_blocking(&serial_crits);
-
   static const uint64_t max_delay = 100000; // 100 ms
   static uint64_t last_rx = -max_delay;
   uint64_t t = to_us_since_boot(get_absolute_time());
   if (t - last_rx >= max_delay) serial_rx_ptr = 0;
   last_rx = t;
+}
+static inline void serial_rx_push_byte(uint8_t x)
+{
+  if (serial_rx_ptr >= sizeof serial_rx_buf) {
+    // XXX: Print message?
+    return;
+  }
+  serial_rx_buf[serial_rx_ptr++] = x;
+}
+static void usb_serial_in_cb(__attribute__((unused)) void *_a)
+{
+  critical_section_enter_blocking(&serial_crits);
 
+  serial_rx_reset_if_timeout();
   while (true) {
     int c = stdio_getchar_timeout_us(0);
     if (c == PICO_ERROR_TIMEOUT) break;
     assert(c >= 0 && c < 255);
-    if (serial_rx_ptr >= 1024) {
-      // XXX: Print message?
-      break;
-    }
-    serial_rx_buf[serial_rx_ptr++] = (uint8_t)c;
+    serial_rx_push_byte((uint8_t)c);
   }
 
   critical_section_exit(&serial_crits);
+}
+
+static uint32_t sm_uart_tx = 0;
+static uint32_t sm_uart_rx = 1;
+
+static void pio0_irq0_handler()
+{
+  if (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
+    serial_rx_reset_if_timeout();
+    while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx)) {
+      uint8_t c = pio_sm_get_8(pio0, sm_uart_rx);
+      serial_rx_push_byte(c);
+      pio_sm_put_blocking(pio0, sm_uart_tx, c);
+    }
+  }
 }
 
 int main()
@@ -113,13 +139,15 @@ int main()
   my_print_init();
   my_printf("sys clk %u\n", clock_get_hz(clk_sys));
 
+  irq_set_exclusive_handler(PIO0_IRQ_0, pio0_irq0_handler);
+  irq_set_enabled(PIO0_IRQ_0, true);
+
   uint32_t sm_uart_tx_offset = pio_add_program(pio0, &uart_tx_program);
-  uint32_t sm_uart_tx = pio_claim_unused_sm(pio0, true);
   uart_tx_program_init(pio0, sm_uart_tx, sm_uart_tx_offset, 3, 115200);
 
   uint32_t sm_uart_rx_offset = pio_add_program(pio0, &uart_rx_program);
-  uint32_t sm_uart_rx = pio_claim_unused_sm(pio0, true);
   uart_rx_program_init(pio0, sm_uart_rx, sm_uart_rx_offset, 4, 115200);
+  pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
   while (1) {
     static bool parity = 0;
@@ -132,8 +160,5 @@ int main()
     serial_rx_bulk(serial_rx_buf, serial_rx_ptr);
     serial_rx_ptr = 0;
     critical_section_exit(&serial_crits);
-    pio_sm_put_blocking(pio0, sm_uart_tx, 0x41);
-    while (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_rx))
-      pio_sm_put_blocking(pio0, sm_uart_tx, pio_sm_get_8(pio0, sm_uart_rx));
   }
 }

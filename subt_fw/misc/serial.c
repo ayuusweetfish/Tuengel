@@ -13,8 +13,8 @@
 #include <stdlib.h>
 
 static int check(enum sp_return result);
-static void _ensure(bool cond, const char *cond_name);
-#define ensure(_cond) _ensure((_cond), #_cond)
+static void _ensure(bool cond, const char *cond_name, const char *file, int line);
+#define ensure(_cond) _ensure((_cond), #_cond, __FILE__, __LINE__)
 
 static struct sp_port *port;
 
@@ -68,9 +68,19 @@ static inline const uint8_t *rx(uint8_t *o_len)
 
 int main(int argc, char **argv)
 {
-  check(sp_get_port_by_name("/dev/cu.usbmodem141301", &port));
+  if (argc <= 1) {
+    printf("Usage: %s <port> [<baud rate>]\n", argc == 0 ? "serial" : argv[0]);
+    return 0;
+  }
+
+  int baud_rate = 921600;
+  if (argc >= 3) {
+    baud_rate = (int)strtol(argv[2], NULL, 10);
+  }
+
+  check(sp_get_port_by_name(argv[1], &port));
   check(sp_open(port, SP_MODE_READ_WRITE));
-  check(sp_set_baudrate(port, 921600));
+  check(sp_set_baudrate(port, baud_rate));
   check(sp_set_bits(port, 8));
   check(sp_set_parity(port, SP_PARITY_NONE));
   check(sp_set_stopbits(port, 1));
@@ -112,10 +122,10 @@ int check(enum sp_return result)
     return result;
   }
 }
-void _ensure(bool cond, const char *cond_name)
+void _ensure(bool cond, const char *cond_name, const char *file, int line)
 {
   if (!cond) {
-    printf("Error: condition \"%s\" does not hold\n", cond_name);
+    printf("Error: (%s:%d) condition \"%s\" does not hold\n", file, line, cond_name);
     abort();
   }
 }
