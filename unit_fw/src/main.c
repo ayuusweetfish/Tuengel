@@ -42,6 +42,8 @@ static void swv_printf(const char *restrict fmt, ...)
 #define swv_printf(...)
 #endif
 
+static TIM_HandleTypeDef tim1;
+
 int main(void)
 {
   HAL_Init();
@@ -81,15 +83,56 @@ int main(void)
   });
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 1);
 
-  uint32_t last_tick = HAL_GetTick();
+  HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
+    .Pin = GPIO_PIN_7,
+    .Mode = GPIO_MODE_AF_PP,
+    .Alternate = GPIO_AF2_TIM1,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+  });
+  __HAL_RCC_TIM1_CLK_ENABLE();
+  tim1 = (TIM_HandleTypeDef){
+    .Instance = TIM1,
+    .Init = {
+      .Prescaler = 24 - 1,  // 1 us per count
+      .CounterMode = TIM_COUNTERMODE_UP,
+      .Period = 20000 - 1,
+      .ClockDivision = TIM_CLOCKDIVISION_DIV1,
+    },
+  };
+  HAL_TIM_PWM_Init(&tim1);
+  TIM_OC_InitTypeDef tim1_ch1_oc_init = {
+    .OCMode = TIM_OCMODE_PWM2,
+    .Pulse = 0, // to be filled
+    .OCPolarity = TIM_OCPOLARITY_LOW,
+  };
+  HAL_TIM_PWM_ConfigChannel(&tim1, &tim1_ch1_oc_init, TIM_CHANNEL_4);
+
+/*
+from math import *
+N=100
+print(', '.join('%d' % round(1500 + 200*(-cos(i/N*2*pi))) for i in range(N)))
+*/
+  static const uint16_t sin_lut[100] = {
+1300, 1300, 1302, 1304, 1306, 1310, 1314, 1319, 1325, 1331, 1338, 1346, 1354, 1363, 1373, 1382, 1393, 1404, 1415, 1426, 1438, 1450, 1463, 1475, 1487, 1500, 1513, 1525, 1537, 1550, 1562, 1574, 1585, 1596, 1607, 1618, 1627, 1637, 1646, 1654, 1662, 1669, 1675, 1681, 1686, 1690, 1694, 1696, 1698, 1700, 1700, 1700, 1698, 1696, 1694, 1690, 1686, 1681, 1675, 1669, 1662, 1654, 1646, 1637, 1627, 1618, 1607, 1596, 1585, 1574, 1562, 1550, 1537, 1525, 1513, 1500, 1487, 1475, 1463, 1450, 1438, 1426, 1415, 1404, 1393, 1382, 1373, 1363, 1354, 1346, 1338, 1331, 1325, 1319, 1314, 1310, 1306, 1304, 1302, 1300
+  };
+
+  TIM1->CCR4 = sin_lut[0];
+  HAL_TIM_PWM_Start(&tim1, TIM_CHANNEL_4);
+
+  int count = 0;
+  int tick = HAL_GetTick();
   bool parity = 0;
   while (1) {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, parity ^= 1);
-    uint32_t cur_tick;
-    while ((cur_tick = HAL_GetTick()) - last_tick < 200)
+    int duty;
+    duty = (count < 100 ? sin_lut[count] : sin_lut[0]);
+    TIM1->CCR4 = duty;
+    tick += 3;
+    while (HAL_GetTick() - tick > 0x80000000)
       HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
-    last_tick = cur_tick;
-    swv_printf("%lu\n", cur_tick);
+    if (++count == 300) {
+      count = 0;
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, parity ^= 1);
+    }
   }
 }
 
