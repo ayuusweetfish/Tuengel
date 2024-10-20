@@ -1,5 +1,5 @@
 if [ "$1" == "f" ]; then    # flash
-  ~/.platformio/packages/tool-openocd/bin/openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000; init; reset halt; rp2040.core1 arp_reset assert 0; rp2040.core0 arp_reset assert 0; reset halt; program build/*.elf verify; reset; exit"
+  ~/.platformio/packages/tool-openocd/bin/openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000; init; reset halt; rp2040.core1 arp_reset assert 0; rp2040.core0 arp_reset assert 0; reset halt; program `echo build/*.elf` verify; reset; exit"
   exit
 elif [ "$1" == "u" ]; then  # upload through USB
   cp build/*.uf2 /Volumes/RPI-RP2

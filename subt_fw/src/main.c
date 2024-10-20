@@ -1,3 +1,4 @@
+// Board is Rev. 2 Subtree
 #include "pico/critical_section.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
@@ -17,7 +18,7 @@
 #define SERIAL_PRINT 0
 #define ACT_1 28
 #define ACT_2 29
-#define ACT_1 25
+// #define ACT_1 25
 
 static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
 {
