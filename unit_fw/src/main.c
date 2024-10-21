@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define RELEASE
+// #define RELEASE
 
 #ifndef RELEASE
 static uint8_t swv_buf[64];
@@ -43,6 +43,7 @@ static void swv_printf(const char *restrict fmt, ...)
 #endif
 
 static TIM_HandleTypeDef tim1;
+static UART_HandleTypeDef uart1;
 
 int main(void)
 {
@@ -77,12 +78,15 @@ int main(void)
   // PA2 - SWCLK, PB6 - SWDIO with correct pull-up/-down upon reset
   // Reference manual v. 1.0 p. 79 (zh) / 77 (en)
 
+  // PA6 - Act LED
   HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
     .Pin = GPIO_PIN_6,
     .Mode = GPIO_MODE_OUTPUT_PP,
   });
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 1);
 
+  // ====== (TIM1) Timer for servo control ======
+  // PA7 - TIM1_CH4
   HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
     .Pin = GPIO_PIN_7,
     .Mode = GPIO_MODE_AF_PP,
@@ -106,6 +110,58 @@ int main(void)
     .OCPolarity = TIM_OCPOLARITY_LOW,
   };
   HAL_TIM_PWM_ConfigChannel(&tim1, &tim1_ch1_oc_init, TIM_CHANNEL_4);
+  TIM1->CCR4 = 0;
+  HAL_TIM_PWM_Start(&tim1, TIM_CHANNEL_4);
+
+  // ====== (USART1) Serial communication ======
+  // PA3 - USART_TX
+  // PA4 - USART_RX
+  HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
+    .Pin = GPIO_PIN_3 | GPIO_PIN_4,
+    .Mode = GPIO_MODE_AF_PP,
+    .Alternate = GPIO_AF1_USART1,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+  });
+  __HAL_RCC_USART1_CLK_ENABLE();
+  uart1 = (UART_HandleTypeDef){
+    .Instance = USART1,
+    .Init = (UART_InitTypeDef){
+      .BaudRate = 115200,
+      .WordLength = UART_WORDLENGTH_8B,
+      .StopBits = UART_STOPBITS_1,
+      .Parity = UART_PARITY_NONE,
+      .Mode = UART_MODE_TX_RX,
+      .HwFlowCtl = UART_HWCONTROL_NONE,
+      .OverSampling = UART_OVERSAMPLING_16,
+    },
+  };
+  HAL_HalfDuplex_Init(&uart1);
+
+  // PA5 - MAX487 driver enable
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+  HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
+    .Pin = GPIO_PIN_5,
+    .Mode = GPIO_MODE_OUTPUT_PP,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+  });
+
+  if (0) {
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+    HAL_HalfDuplex_EnableReceiver(&uart1);
+    while (1) {
+      uint8_t data[64];
+      int result = HAL_UART_Receive(&uart1, data, 1, 1000);
+      swv_printf("%d %02x\n", result, (int)data[0]);
+      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+    }
+  } else {
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
+    HAL_HalfDuplex_EnableTransmitter(&uart1);
+    while (1) {
+      HAL_UART_Transmit(&uart1, (uint8_t *)"hello\r\n", 7, 1000);
+      HAL_Delay(500);
+    }
+  }
 
 /*
 from math import *
@@ -117,7 +173,6 @@ print(', '.join('%d' % round(1500 + 200*(-cos(i/N*2*pi))) for i in range(N)))
   };
 
   TIM1->CCR4 = sin_lut[0];
-  HAL_TIM_PWM_Start(&tim1, TIM_CHANNEL_4);
 
   int count = 0;
   int tick = HAL_GetTick();
