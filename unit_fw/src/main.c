@@ -126,7 +126,7 @@ int main(void)
   uart1 = (UART_HandleTypeDef){
     .Instance = USART1,
     .Init = (UART_InitTypeDef){
-      .BaudRate = 115200,
+      .BaudRate = 9600,
       .WordLength = UART_WORDLENGTH_8B,
       .StopBits = UART_STOPBITS_1,
       .Parity = UART_PARITY_NONE,
@@ -135,7 +135,7 @@ int main(void)
       .OverSampling = UART_OVERSAMPLING_16,
     },
   };
-  HAL_HalfDuplex_Init(&uart1);
+  HAL_UART_Init(&uart1);
 
   // PA5 - MAX487 driver enable
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
@@ -147,7 +147,6 @@ int main(void)
 
   if (0) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
-    HAL_HalfDuplex_EnableReceiver(&uart1);
     while (1) {
       uint8_t data[64];
       int result = HAL_UART_Receive(&uart1, data, 1, 1000);
@@ -156,9 +155,10 @@ int main(void)
     }
   } else {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-    HAL_HalfDuplex_EnableTransmitter(&uart1);
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
     while (1) {
       HAL_UART_Transmit(&uart1, (uint8_t *)"hello\r\n", 7, 1000);
+      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
       HAL_Delay(500);
     }
   }
