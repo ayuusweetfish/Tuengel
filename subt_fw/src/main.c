@@ -229,7 +229,7 @@ int main()
   uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
 
-  while (1) {
+  while (0) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
     serial_tx(PORT_UPSTRM, (uint8_t *)"hello", 5);

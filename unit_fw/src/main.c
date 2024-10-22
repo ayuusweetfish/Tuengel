@@ -85,6 +85,28 @@ int main(void)
   });
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 1);
 
+  while (0) {
+    HAL_Delay(500);
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+
+    static int count = 0;
+    if (++count == 6) {
+      HAL_RCC_OscConfig(&(RCC_OscInitTypeDef){
+        .OscillatorType = RCC_OSCILLATORTYPE_HSE,
+        .HSEState = RCC_HSE_BYPASS_ENABLE,
+      });
+      HAL_RCC_ClockConfig(&(RCC_ClkInitTypeDef){
+        .ClockType =
+          RCC_CLOCKTYPE_SYSCLK |
+          RCC_CLOCKTYPE_HCLK |
+          RCC_CLOCKTYPE_PCLK1,
+        .SYSCLKSource = RCC_SYSCLKSOURCE_HSE, // 24 MHz
+        .AHBCLKDivider = RCC_SYSCLK_DIV1,
+        .APB1CLKDivider = RCC_HCLK_DIV1,
+      }, FLASH_LATENCY_1);
+    }
+  }
+
   // ====== (TIM1) Timer for servo control ======
   // PA7 - TIM1_CH4
   HAL_GPIO_Init(GPIOA, &(GPIO_InitTypeDef){
@@ -145,6 +167,7 @@ int main(void)
     .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
   });
 
+if (0)
   if (0) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
     while (1) {
