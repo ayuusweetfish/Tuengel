@@ -1,5 +1,5 @@
 // Sends a packet with the format: <1 byte length> <payload> <CRC-32 little-endian>
-// gcc % -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
+// gcc % -O2 -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
 
 // NOTE: `kIOMainPortDefault` is valid for macOS 12.0+.
 // For previous versions, replace it with `kIOMasterPortDefault` in `libserialport/macosx.c` and rebuild.
@@ -22,10 +22,10 @@ static inline void tx(const uint8_t *buf, uint8_t len)
 {
   int n_tx;
 
-  n_tx = check(sp_blocking_write(port, &len, 1, 1000));
+  n_tx = check(sp_blocking_write(port, &len, 1, 100));
   ensure(n_tx == 1);
 
-  n_tx = check(sp_blocking_write(port, buf, len, 1000));
+  n_tx = check(sp_blocking_write(port, buf, len, 100));
   ensure(n_tx == len);
 
   uint32_t s = crc32_bulk(buf, len);
@@ -35,7 +35,7 @@ static inline void tx(const uint8_t *buf, uint8_t len)
     (uint8_t)(s >> 16),
     (uint8_t)(s >> 24),
   };
-  n_tx = check(sp_blocking_write(port, s8, 4, 1000));
+  n_tx = check(sp_blocking_write(port, s8, 4, 100));
   ensure(n_tx == 4);
 }
 
@@ -45,7 +45,7 @@ static inline const uint8_t *rx(uint8_t *o_len)
   uint8_t len;
 
 restart:
-  n_rx = check(sp_blocking_read(port, &len, 1, 1000));
+  n_rx = check(sp_blocking_read(port, &len, 1, 100));
   ensure(n_rx == 1);
   if (len == 0) {
     printf("(ignoring empty packet)\n");
@@ -54,7 +54,7 @@ restart:
 
   printf("[%02x]\n", len);
   static uint8_t rx_buf[255 + 4];
-  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, 1000));
+  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, 100));
   for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
   ensure(n_rx == len + 4);
 

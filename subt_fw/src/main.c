@@ -38,14 +38,16 @@ static inline void upstrm_dir(int tx)
     pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, true);
   } else if (tx == 0) {
     while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
-    sleep_us(100);  // 10 bits time @ 119200 bps = 84 us. TODO: Not optimal
+    sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
+    while (pio_interrupt_get(pio0, sm_uart_upstrm_tx + 0)) { }
     pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
     gpio_put(PIN_UPSTRM_DIR, 0);
     pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, true);
   } else {
     pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
     while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
-    sleep_us(100);  // 10 bits time @ 119200 bps = 84 us. TODO: Not optimal
+    sleep_us(3);
+    while (pio_interrupt_get(pio0, sm_uart_upstrm_tx + 0)) { }
     pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
   }
 }
