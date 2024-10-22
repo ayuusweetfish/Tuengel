@@ -30,26 +30,34 @@ static const uint8_t PIN_UPSTRM_DATA = 1;
 static uint32_t sm_uart_upstrm_tx = 0;
 static uint32_t sm_uart_upstrm_rx = 1;
 
-static inline void upstrm_dir(int tx)
+static inline void uart_tx_wait(PIO pio, uint32_t sm)
 {
-  if (tx == 1) {
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
-    gpio_put(PIN_UPSTRM_DIR, 1);
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, true);
-  } else if (tx == 0) {
-    while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
-    sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
-    while (pio_interrupt_get(pio0, sm_uart_upstrm_tx + 0)) { }
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
-    gpio_put(PIN_UPSTRM_DIR, 0);
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, true);
+  while (!pio_sm_is_tx_fifo_empty(pio, sm)) { }
+  sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
+  while (pio_interrupt_get(pio, sm + 0)) { }
+}
+
+static inline void uart_dir(PIO pio, uint32_t sm_rx, uint32_t sm_tx, uint32_t de_pin, int tx_mode)
+{
+  if (tx_mode == 1) {
+    pio_sm_set_enabled(pio, sm_rx, false);
+    gpio_put(de_pin, 1);
+    pio_sm_set_enabled(pio, sm_tx, true);
+  } else if (tx_mode == 0) {
+    uart_tx_wait(pio, sm_tx);
+    pio_sm_set_enabled(pio, sm_tx, false);
+    gpio_put(de_pin, 0);
+    pio_sm_set_enabled(pio, sm_rx, true);
   } else {
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
-    while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
-    sleep_us(3);
-    while (pio_interrupt_get(pio0, sm_uart_upstrm_tx + 0)) { }
-    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
+    pio_sm_set_enabled(pio, sm_rx, false);
+    uart_tx_wait(pio, sm_tx);
+    pio_sm_set_enabled(pio, sm_tx, false);
+    gpio_put(de_pin, 0);
   }
+}
+static inline void upstrm_dir(int tx_mode)
+{
+  uart_dir(pio0, sm_uart_upstrm_rx, sm_uart_upstrm_tx, PIN_UPSTRM_DIR, tx_mode);
 }
 
 // Where does the last command come from?

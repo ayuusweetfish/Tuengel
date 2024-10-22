@@ -20,22 +20,20 @@ bitloop:                 ; This loop will run 8 times (8n1 UART)
 % c-sdk {
 #include "hardware/clocks.h"
 
-static pio_sm_config uart_tx_cfg = { 0 };
-
 static inline void uart_tx_program_init(PIO pio, uint sm, uint offset, uint baud) {
-  uart_tx_cfg = uart_tx_program_get_default_config(offset);
+  pio_sm_config c = uart_tx_program_get_default_config(offset);
 
   // OUT shifts to right, no autopull
-  sm_config_set_out_shift(&uart_tx_cfg, true, false, 32);
+  sm_config_set_out_shift(&c, true, false, 32);
 
   // We only need TX, so get an 8-deep FIFO!
-  sm_config_set_fifo_join(&uart_tx_cfg, PIO_FIFO_JOIN_TX);
+  sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
   // SM transmits 1 bit per 8 execution cycles.
   float div = (float)clock_get_hz(clk_sys) / (8 * baud);
-  sm_config_set_clkdiv(&uart_tx_cfg, div);
+  sm_config_set_clkdiv(&c, div);
 
-  pio_sm_init(pio, sm, offset, &uart_tx_cfg);
+  pio_sm_init(pio, sm, offset, &c);
 }
 
 static inline void uart_tx_set_pin(PIO pio, uint sm, uint pin) {
@@ -44,14 +42,13 @@ static inline void uart_tx_set_pin(PIO pio, uint sm, uint pin) {
   pio_sm_set_pins_with_mask(pio, sm, 1u << pin, 1u << pin);
   pio_sm_set_pindirs_with_mask(pio, sm, 1u << pin, 1u << pin);
   pio_gpio_init(pio, pin);
+  gpio_pull_up(pin);
 
   // We are mapping both OUT and side-set to the same pin, because sometimes
   // we need to assert user data onto the pin (with OUT) and sometimes
   // assert constant values (start/stop bit)
-  sm_config_set_out_pins(&uart_tx_cfg, pin, 1);
-  sm_config_set_sideset_pins(&uart_tx_cfg, pin);
-
-  pio_sm_set_config(pio, sm, &uart_tx_cfg);
+  pio_sm_set_out_pins(pio, sm, pin, 1);
+  pio_sm_set_sideset_pins(pio, sm, pin);
 }
 %}
 
@@ -78,28 +75,24 @@ good_stop:            ; No delay before returning to start; a little slack is
 
 
 % c-sdk {
-static pio_sm_config uart_rx_cfg = { 0 };
-
 static inline void uart_rx_program_init(PIO pio, uint sm, uint offset, uint baud) {
-  uart_rx_cfg = uart_rx_program_get_default_config(offset);
+  pio_sm_config c = uart_rx_program_get_default_config(offset);
   // Shift to right, autopush disabled
-  sm_config_set_in_shift(&uart_rx_cfg, true, false, 32);
+  sm_config_set_in_shift(&c, true, false, 32);
   // Deeper FIFO as we're not doing any TX
-  sm_config_set_fifo_join(&uart_rx_cfg, PIO_FIFO_JOIN_RX);
+  sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
   // SM transmits 1 bit per 8 execution cycles.
   float div = (float)clock_get_hz(clk_sys) / (8 * baud);
-  sm_config_set_clkdiv(&uart_rx_cfg, div);
+  sm_config_set_clkdiv(&c, div);
   
-  pio_sm_init(pio, sm, offset, &uart_rx_cfg);
+  pio_sm_init(pio, sm, offset, &c);
 }
 
 static inline void uart_rx_set_pin(PIO pio, uint sm, uint pin) {
   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
   pio_gpio_init(pio, pin);
   gpio_pull_up(pin);
-  sm_config_set_in_pins(&uart_rx_cfg, pin); // for WAIT, IN
-  sm_config_set_jmp_pin(&uart_rx_cfg, pin); // for JMP
-
-  pio_sm_set_config(pio, sm, &uart_rx_cfg);
+  pio_sm_set_in_pins(pio, sm, pin); // for WAIT, IN
+  pio_sm_set_jmp_pin(pio, sm, pin); // for JMP
 }
 %}
