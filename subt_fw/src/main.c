@@ -1,4 +1,4 @@
-// Board is Pi Pico
+// Board is Rev. 2 Subtree
 #include "pico/critical_section.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
@@ -18,7 +18,6 @@
 #define SERIAL_PRINT 0
 #define ACT_1 28
 #define ACT_2 29
-#define ACT_1 25
 
 static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
 {
@@ -226,9 +225,16 @@ int main()
   uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 115200);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
-  uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 5);
+  uart_tx_set_pin(pio0, sm_uart_upstrm_tx, PIN_UPSTRM_DATA);
   uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
+
+  while (1) {
+    static bool parity = 0;
+    gpio_put(ACT_1, parity ^= 1);
+    serial_tx(PORT_UPSTRM, (uint8_t *)"hello", 5);
+    sleep_ms(250);
+  }
 
   while (1) {
     static bool parity = 0;
