@@ -63,12 +63,14 @@ static inline void uart_dir(PIO pio, uint32_t sm_rx, uint32_t sm_tx, uint32_t de
 static inline void upstrm_dir(int tx_mode)
 {
   uart_dir(pio0, sm_uart_upstrm_rx, sm_uart_upstrm_tx, PIN_UPSTRM_DIR, tx_mode);
+  if (tx_mode == 1) uart_tx_set_pin(pio0, sm_uart_upstrm_tx, PIN_UPSTRM_DATA);
+  if (tx_mode == 0) uart_rx_set_pin(pio0, sm_uart_upstrm_rx, PIN_UPSTRM_DATA);
 }
 static inline void dnstrm_dir(uint8_t port, int tx_mode)
 {
-  uart_tx_set_pin(pio0, sm_uart_dnstrm_tx, PIN_DNSTRM_DATA_START + port);
-  // uart_rx_set_pin(pio0, sm_uart_dnstrm_rx, PIN_DNSTRM_DATA_START + port);
   uart_dir(pio0, sm_uart_dnstrm_rx, sm_uart_dnstrm_tx, PIN_DNSTRM_DIR, tx_mode);
+  if (tx_mode == 1) uart_tx_set_pin(pio0, sm_uart_dnstrm_tx, PIN_DNSTRM_DATA_START + port);
+  if (tx_mode == 0) uart_rx_set_pin(pio0, sm_uart_dnstrm_rx, PIN_DNSTRM_DATA_START + port);
 }
 
 // Where does the last command come from?
@@ -245,24 +247,20 @@ int main()
 
   // Upstream-facing port
   uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 9600);
-  // uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
+  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
-  uart_tx_set_pin(pio0, sm_uart_upstrm_tx, PIN_UPSTRM_DATA);
-  // uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
 
   // Downstream-facing port
   uart_tx_program_init(pio0, sm_uart_dnstrm_tx, uart_tx_program_offset, 9600);
-  // uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
+  uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
   dnstrm_dir(0, -1);
 
   while (1) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
-    // serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
-    // serial_tx(PORT_UPSTRM, (uint8_t *)"\x01", 1);
-    serial_tx(0, (uint8_t *)"\x01", 1);
+    serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
     sleep_ms(250);
   }
 
