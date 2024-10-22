@@ -1,4 +1,4 @@
-// Board is Rev. 2 Subtree
+// Board is Pi Pico
 #include "pico/critical_section.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
@@ -18,7 +18,7 @@
 #define SERIAL_PRINT 0
 #define ACT_1 28
 #define ACT_2 29
-// #define ACT_1 25
+#define ACT_1 25
 
 static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
 {
@@ -30,18 +30,23 @@ static const uint8_t PIN_UPSTRM_DATA = 1;
 static uint32_t sm_uart_upstrm_tx = 0;
 static uint32_t sm_uart_upstrm_rx = 1;
 
-static inline void upstrm_dir(bool tx)
+static inline void upstrm_dir(int tx)
 {
-  if (tx) {
+  if (tx == 1) {
     pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
     gpio_put(PIN_UPSTRM_DIR, 1);
     pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, true);
-  } else {
+  } else if (tx == 0) {
     while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
     sleep_us(100);  // 10 bits time @ 119200 bps = 84 us. TODO: Not optimal
     pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
     gpio_put(PIN_UPSTRM_DIR, 0);
     pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, true);
+  } else {
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_rx, false);
+    while (!pio_sm_is_tx_fifo_empty(pio0, sm_uart_upstrm_tx)) { }
+    sleep_us(100);  // 10 bits time @ 119200 bps = 84 us. TODO: Not optimal
+    pio_sm_set_enabled(pio0, sm_uart_upstrm_tx, false);
   }
 }
 
@@ -207,16 +212,30 @@ int main()
   uint32_t uart_tx_program_offset = pio_add_program(pio0, &uart_tx_program);
   uint32_t uart_rx_program_offset = pio_add_program(pio0, &uart_rx_program);
 
-  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 3, 115200);
-  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 4, 115200);
+  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 115200);
+  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 115200);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
+  uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 5);
+  uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
 
   while (1) {
     static bool parity = 0;
     static int count = 0;
-    if (++count == 100) { count = 0; parity ^= 1; }
+    if (++count == 500) {
+      count = 0; parity ^= 1;
+      upstrm_dir(-1);
+      if (parity == 0) {
+        uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 5);
+        uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
+      } else {
+        uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 7);
+        uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 8);
+      }
+      upstrm_dir(0);
+    }
+
     gpio_put(ACT_1, (parity | stdio_usb_connected()));
     gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
