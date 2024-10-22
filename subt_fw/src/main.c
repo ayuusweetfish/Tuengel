@@ -24,13 +24,13 @@ static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
   return *((io_rw_8 *)&pio->rxf[sm] + 3);
 }
 
-static const uint8_t PIN_UPSTRM_DIR = 2;  // 0;
-static const uint8_t PIN_UPSTRM_DATA = 3; // 1;
+static const uint8_t PIN_UPSTRM_DIR = 0;
+static const uint8_t PIN_UPSTRM_DATA = 1;
 static uint32_t sm_uart_upstrm_tx = 0;
 static uint32_t sm_uart_upstrm_rx = 1;
 
-static const uint8_t PIN_DNSTRM_DIR = 0;  // 2;
-static const uint8_t PIN_DNSTRM_DATA_START = 1; // 3;
+static const uint8_t PIN_DNSTRM_DIR = 2;
+static const uint8_t PIN_DNSTRM_DATA_START = 3;
 static uint32_t sm_uart_dnstrm_tx = 2;
 static uint32_t sm_uart_dnstrm_rx = 3;
 
@@ -234,6 +234,8 @@ int main()
 
   gpio_init(PIN_UPSTRM_DIR); gpio_set_dir(PIN_UPSTRM_DIR, GPIO_OUT);
   gpio_put(PIN_UPSTRM_DIR, 0);
+  gpio_init(PIN_DNSTRM_DIR); gpio_set_dir(PIN_DNSTRM_DIR, GPIO_OUT);
+  gpio_put(PIN_DNSTRM_DIR, 0);
 
   irq_set_exclusive_handler(PIO0_IRQ_0, pio0_irq0_handler);
   irq_set_enabled(PIO0_IRQ_0, true);
@@ -243,24 +245,24 @@ int main()
 
   // Upstream-facing port
   uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 9600);
-  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
+  // uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
   uart_tx_set_pin(pio0, sm_uart_upstrm_tx, PIN_UPSTRM_DATA);
-  uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
+  // uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
 
   // Downstream-facing port
   uart_tx_program_init(pio0, sm_uart_dnstrm_tx, uart_tx_program_offset, 9600);
-  uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
+  // uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
   dnstrm_dir(0, -1);
 
   while (1) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
     // serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
-    serial_tx(PORT_UPSTRM, (uint8_t *)"\x01", 1);
-    // serial_tx(0, (uint8_t *)"\x01", 1);
+    // serial_tx(PORT_UPSTRM, (uint8_t *)"\x01", 1);
+    serial_tx(0, (uint8_t *)"\x01", 1);
     sleep_ms(250);
   }
 
