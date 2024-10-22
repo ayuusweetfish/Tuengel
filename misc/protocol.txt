@@ -3,6 +3,8 @@ Packet format
 [n byte] Payload
 [4 byte] CRC-32 0x04C11DB7 little-endian
 
+(All offsets hexadecimal)
+
 Serial - L0
 Ping
   +00 [0x55] Ping
@@ -38,5 +40,8 @@ Ping
 +00 [0x55] Ping
   Response
     +00 [0xAA] Pong
+    +01..10 UID
 Strike
   +00 [0x01] Strike
+  Response
+    +00 [0xAA] Done

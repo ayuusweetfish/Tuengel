@@ -24,15 +24,21 @@ static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
   return *((io_rw_8 *)&pio->rxf[sm] + 3);
 }
 
-static const uint8_t PIN_UPSTRM_DIR = 0;
-static const uint8_t PIN_UPSTRM_DATA = 1;
+static const uint8_t PIN_UPSTRM_DIR = 2;  // 0;
+static const uint8_t PIN_UPSTRM_DATA = 3; // 1;
 static uint32_t sm_uart_upstrm_tx = 0;
 static uint32_t sm_uart_upstrm_rx = 1;
+
+static const uint8_t PIN_DNSTRM_DIR = 0;  // 2;
+static const uint8_t PIN_DNSTRM_DATA_START = 1; // 3;
+static uint32_t sm_uart_dnstrm_tx = 2;
+static uint32_t sm_uart_dnstrm_rx = 3;
 
 static inline void uart_tx_wait(PIO pio, uint32_t sm)
 {
   while (!pio_sm_is_tx_fifo_empty(pio, sm)) { }
-  sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
+  // sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
+  sleep_us(15);   // 1 cycle @ (9600 bps * 8) = 13.02 us
   while (pio_interrupt_get(pio, sm + 0)) { }
 }
 
@@ -57,6 +63,12 @@ static inline void uart_dir(PIO pio, uint32_t sm_rx, uint32_t sm_tx, uint32_t de
 static inline void upstrm_dir(int tx_mode)
 {
   uart_dir(pio0, sm_uart_upstrm_rx, sm_uart_upstrm_tx, PIN_UPSTRM_DIR, tx_mode);
+}
+static inline void dnstrm_dir(uint8_t port, int tx_mode)
+{
+  uart_tx_set_pin(pio0, sm_uart_dnstrm_tx, PIN_DNSTRM_DATA_START + port);
+  // uart_rx_set_pin(pio0, sm_uart_dnstrm_rx, PIN_DNSTRM_DATA_START + port);
+  uart_dir(pio0, sm_uart_dnstrm_rx, sm_uart_dnstrm_tx, PIN_DNSTRM_DIR, tx_mode);
 }
 
 // Where does the last command come from?
@@ -91,6 +103,14 @@ static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
     for (uint32_t i = 0; i < 4; i++)
       pio_sm_put_blocking(pio0, sm_uart_upstrm_tx, s8[i]);
     upstrm_dir(0);
+  } else if (port >= 0 && port < 17) {
+    dnstrm_dir(port, 1);
+    pio_sm_put_blocking(pio0, sm_uart_dnstrm_tx, len);
+    for (uint32_t i = 0; i < len; i++)
+      pio_sm_put_blocking(pio0, sm_uart_dnstrm_tx, buf[i]);
+    for (uint32_t i = 0; i < 4; i++)
+      pio_sm_put_blocking(pio0, sm_uart_dnstrm_tx, s8[i]);
+    dnstrm_dir(port, 0);
   }
 }
 
@@ -221,18 +241,26 @@ int main()
   uint32_t uart_tx_program_offset = pio_add_program(pio0, &uart_tx_program);
   uint32_t uart_rx_program_offset = pio_add_program(pio0, &uart_rx_program);
 
-  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 115200);
-  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 115200);
+  // Upstream-facing port
+  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 9600);
+  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
   uart_tx_set_pin(pio0, sm_uart_upstrm_tx, PIN_UPSTRM_DATA);
   uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
   upstrm_dir(0);
 
-  while (0) {
+  // Downstream-facing port
+  uart_tx_program_init(pio0, sm_uart_dnstrm_tx, uart_tx_program_offset, 9600);
+  uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
+  dnstrm_dir(0, -1);
+
+  while (1) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
-    serial_tx(PORT_UPSTRM, (uint8_t *)"hello", 5);
+    // serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
+    serial_tx(PORT_UPSTRM, (uint8_t *)"\x01", 1);
+    // serial_tx(0, (uint8_t *)"\x01", 1);
     sleep_ms(250);
   }
 

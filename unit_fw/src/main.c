@@ -45,6 +45,9 @@ static void swv_printf(const char *restrict fmt, ...)
 static TIM_HandleTypeDef tim1;
 static UART_HandleTypeDef uart1;
 
+static uint8_t rx_len = 0;
+static uint8_t rx_buf[256 + 4];
+
 int main(void)
 {
   HAL_Init();
@@ -167,8 +170,16 @@ int main(void)
     .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
   });
 
+  HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(USART1_IRQn);
+  HAL_UART_Receive_IT(&uart1, rx_buf, 1);
+
+  while (1) {
+    HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
+  }
+
 if (0)
-  if (0) {
+  if (1) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
     while (1) {
       uint8_t data[64];
@@ -221,4 +232,29 @@ void PendSV_Handler() { while (1) { } }
 void SysTick_Handler()
 {
   HAL_IncTick();
+}
+
+void USART1_IRQHandler()
+{
+  HAL_UART_IRQHandler(&uart1);
+}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *_uart1)
+{
+  if (rx_len == 0) {
+    uint8_t len = rx_buf[0];
+    if (len == 0) {
+      // Ignore empty packet
+      HAL_UART_Receive_IT(&uart1, rx_buf, 1);
+    } else {
+      // Receive payload
+      rx_len = len;
+      HAL_UART_Receive_IT(&uart1, rx_buf, len + 4);
+    }
+  } else {
+    // Packet complete!
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+    // Wait for next packet
+    rx_len = 0;
+    HAL_UART_Receive_IT(&uart1, rx_buf, 1);
+  }
 }
