@@ -59,8 +59,9 @@ static inline void uart_tx_set_pin(PIO pio, uint sm, uint pin) {
 ; IN pin 0 and JMP pin are both mapped to the GPIO used as UART RX.
 
 start:
-  wait 0 pin 0        ; Stall until start bit is asserted
-  set x, 7    [10]    ; Preload bit counter, then delay until halfway through
+  wait 0 pin 0    [3] ; Stall until start bit is asserted, then delay until halfway through start bit
+  jmp pin start       ; Retry if spurious start signal
+  set x, 7        [6] ; Preload bit counter, then delay until halfway through
 bitloop:              ; the first data bit (12 cycles incl wait, set).
   in pins, 1          ; Shift data bit into ISR
   jmp x-- bitloop [6] ; Loop 8 times, each loop iteration is 8 cycles
