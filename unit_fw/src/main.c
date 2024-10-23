@@ -153,7 +153,7 @@ int main(void)
   uart1 = (UART_HandleTypeDef){
     .Instance = USART1,
     .Init = (UART_InitTypeDef){
-      .BaudRate = 9600,
+      .BaudRate = 115200,
       .WordLength = UART_WORDLENGTH_8B,
       .StopBits = UART_STOPBITS_1,
       .Parity = UART_PARITY_NONE,

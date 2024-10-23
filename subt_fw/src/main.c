@@ -283,15 +283,15 @@ int main()
   uint32_t uart_rx_program_offset = pio_add_program(pio0, &uart_rx_program);
 
   // Upstream-facing port
-  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 9600);
-  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 9600);
+  uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 115200);
+  uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 115200);
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
 
   upstrm_dir(0);
 
   // Downstream-facing port
-  uart_tx_program_init(pio0, sm_uart_dnstrm_tx, uart_tx_program_offset, 9600);
-  uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 9600);
+  uart_tx_program_init(pio0, sm_uart_dnstrm_tx, uart_tx_program_offset, 115200);
+  uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 115200);
   dnstrm_dir(0, -1);
 
   while (1) {
