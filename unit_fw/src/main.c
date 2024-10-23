@@ -285,7 +285,7 @@ static inline void serial_rx_process_byte(uint8_t c)
         }
 
         if (out_len != 0) {
-          spin_delay(24000);  // 1 ms
+          spin_delay(12000);  // 0.5 ms
           serial_tx(out_buf, out_len);
         }
       }
