@@ -50,6 +50,10 @@ static UART_HandleTypeDef uart1;
 static uint8_t rx_len = 0;
 static uint8_t rx_buf[256 + 4];
 
+// 0 - Idle
+// 1 - Strike
+static volatile uint32_t op = 0;
+
 static inline void spin_delay(uint32_t cycles)
 {
   __asm__ volatile (
@@ -193,10 +197,6 @@ int main(void)
   HAL_NVIC_EnableIRQ(USART1_IRQn);
   HAL_UART_Receive_IT(&uart1, rx_buf, 1);
 
-  while (1) {
-    HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
-  }
-
 /*
 from math import *
 N=100
@@ -208,19 +208,19 @@ print(', '.join('%d' % round(1500 + 200*(-cos(i/N*2*pi))) for i in range(N)))
 
   TIM1->CCR4 = sin_lut[0];
 
-  int count = 0;
-  int tick = HAL_GetTick();
-  bool parity = 0;
   while (1) {
-    int duty;
-    duty = (count < 100 ? sin_lut[count] : sin_lut[0]);
-    TIM1->CCR4 = duty;
-    tick += 3;
-    while (HAL_GetTick() - tick > 0x80000000)
+    if (op == 0) {
       HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
-    if (++count == 300) {
-      count = 0;
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, parity ^= 1);
+    } else if (op == 1) {
+      int tick = HAL_GetTick();
+      for (int i = 0; i < 100; i++) {
+        TIM1->CCR4 = sin_lut[i];
+        tick += 3;
+        while (HAL_GetTick() - tick > 0x80000000)
+          HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
+      }
+      TIM1->CCR4 = sin_lut[0];
+      op = 0;
     }
   }
 }
@@ -255,6 +255,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *_uart1)
     uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
     if (s == 0x2144DF1C) {
       HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+      if (rx_buf[0] == 0x01) {
+        // Strike
+        op = 1;
+      }
       spin_delay(12000);  // 500 us
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
       HAL_UART_Transmit(&uart1, (uint8_t *)"\x01\xAA\x7b\xa5\x01\xe4", 6, 1000);
