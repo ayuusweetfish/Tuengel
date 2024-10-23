@@ -194,8 +194,6 @@ int main(void)
 
   while (1) {
     if (op == 0) {
-      uint32_t t = HAL_GetTick();
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, (t % 1024 < 20) || (t - rx_timestamp < 200));
       HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
     } else if (op == 1) {
       strike(strike_vel);
@@ -317,6 +315,9 @@ void PendSV_Handler() { while (1) { } }
 void SysTick_Handler()
 {
   HAL_IncTick();
+  uint32_t t = HAL_GetTick();
+  bool act_led = (t - rx_timestamp < 1000 ? (t - rx_timestamp < 300) : (t % 4096 < 100));
+  GPIOA->BSRR = (GPIO_PIN_6 << (act_led ? 0 : 16));
 }
 
 void USART1_IRQHandler()
