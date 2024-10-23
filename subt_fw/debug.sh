@@ -10,6 +10,13 @@ define hookpost-run
 end
 set pagination off
 target extended-remote localhost:3333
+
+b my_trap_line
+commands
+  silent
+  printf "%s\n", my_buf
+  c
+end
 EOF
 
 ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-gdb build/*.elf -x build/gdbinit

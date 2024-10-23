@@ -15,7 +15,7 @@ static inline void my_print_init()
   gpio_set_function(17, GPIO_FUNC_UART);  // UART0 RX
 }
 #else
-static uint8_t my_buf[256];
+uint8_t my_buf[256];
 static size_t my_buf_ptr = 0;
 __attribute__ ((noinline, used))
 void my_trap_line()

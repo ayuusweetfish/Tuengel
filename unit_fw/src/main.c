@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../../misc/crc32/crc32.h"
+
 // #define RELEASE
 
 #ifndef RELEASE
@@ -178,25 +180,6 @@ int main(void)
     HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
   }
 
-if (0)
-  if (1) {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
-    while (1) {
-      uint8_t data[64];
-      int result = HAL_UART_Receive(&uart1, data, 1, 1000);
-      swv_printf("%d %02x\n", result, (int)data[0]);
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-    }
-  } else {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-    while (1) {
-      HAL_UART_Transmit(&uart1, (uint8_t *)"hello\r\n", 7, 1000);
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-      HAL_Delay(500);
-    }
-  }
-
 /*
 from math import *
 N=100
@@ -248,11 +231,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *_uart1)
     } else {
       // Receive payload
       rx_len = len;
-      HAL_UART_Receive_IT(&uart1, rx_buf, len + 4);
+      HAL_UART_Receive_IT(&uart1, rx_buf, (uint32_t)len + 4);
     }
   } else {
     // Packet complete!
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+    uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
+    if (s == 0x2144DF1C) {
+      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+      HAL_Delay(3);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
+      HAL_UART_Transmit(&uart1, (uint8_t *)"\x01\xAA\x7b\xa5\x01\xe4", 6, 1000);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+    }
     // Wait for next packet
     rx_len = 0;
     HAL_UART_Receive_IT(&uart1, rx_buf, 1);

@@ -13,15 +13,23 @@
 #include "uart.pio.h"
 
 #include "../../misc/crc32/crc32.h"
-#include "debug_print.h"
 
 #define SERIAL_PRINT 0
+#include "debug_print.h"
+
 #define ACT_1 28
 #define ACT_2 29
 
 static inline uint8_t pio_sm_get_8(PIO pio, uint sm)
 {
   return *((io_rw_8 *)&pio->rxf[sm] + 3);
+}
+// Returns 0x8000 on timeout
+static inline uint16_t pio_sm_get_8_blocking(PIO pio, uint sm, uint64_t timeout)
+{
+  while (pio_sm_is_rx_fifo_empty(pio, sm))
+    if (time_us_64() - timeout < (1ULL << 63)) return 0x8000;
+  return (uint16_t)pio_sm_get_8(pio, sm);
 }
 
 static const uint8_t PIN_UPSTRM_DIR = 0;
@@ -82,6 +90,7 @@ static enum {
 
 static const uint8_t PORT_USB = 0xfe;
 static const uint8_t PORT_UPSTRM = 0xff;
+
 static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
 {
   uint32_t s = crc32_bulk(buf, len);
@@ -113,6 +122,34 @@ static inline void serial_tx(uint8_t port, const uint8_t *buf, uint8_t len)
     for (uint32_t i = 0; i < 4; i++)
       pio_sm_put_blocking(pio0, sm_uart_dnstrm_tx, s8[i]);
     dnstrm_dir(port, 0);
+  }
+}
+
+static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(uint8_t, const uint8_t *))
+{
+  // Only for receiving response from downstream-facing ports
+  if (port >= 18) return false;
+
+  timeout += time_us_64();
+
+  dnstrm_dir(port, 0);  // Change pin
+
+  while (true) {
+    uint16_t len = pio_sm_get_8_blocking(pio0, sm_uart_dnstrm_rx, timeout);
+    if (len >= 256) return false; // Timeout
+
+    if (len > 0) {
+      static uint8_t buf[256 + 4];
+      for (int i = 0; i < (int)len + 4; i++) {
+        uint16_t c = pio_sm_get_8_blocking(pio0, sm_uart_dnstrm_rx, timeout);
+        if (c >= 256) return false; // Timeout
+        buf[i] = c;
+      }
+      uint32_t s = crc32_bulk(buf, (int)len + 4);
+      if (s == 0x2144DF1C) {
+        if (f((uint8_t)len, buf)) return true;
+      }
+    }
   }
 }
 
@@ -168,7 +205,7 @@ static inline void serial_rx_reset_if_timeout()
 {
   static const uint64_t max_delay = 100000; // 100 ms
   static uint64_t last_rx = -max_delay;
-  uint64_t t = to_us_since_boot(get_absolute_time());
+  uint64_t t = time_us_64();
   if (t - last_rx >= max_delay) serial_rx_ptr = 0;
   last_rx = t;
 }
@@ -261,6 +298,12 @@ int main()
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
     serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
+
+    // Timeout 750 ms
+    bool check_ack(uint8_t len, const uint8_t *buf) {
+      return len >= 1 && buf[0] == 0xAA;
+    }
+    serial_rx_blocking((uint8_t)parity, 750000, check_ack);
     sleep_ms(250);
   }
 
