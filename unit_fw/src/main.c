@@ -7,7 +7,7 @@
 
 #include "../../misc/crc32/crc32.h"
 
-// #define RELEASE
+#define RELEASE
 
 #ifndef RELEASE
 static uint8_t swv_buf[64];
@@ -51,6 +51,7 @@ static uint8_t rx_len = 0;
 static uint8_t rx_buf[256 + 4];
 static uint8_t rx_ptr = 0;
 static uint8_t rx_byte;
+static uint32_t rx_timestamp = 0xc0000000;  // For activity indicator
 
 // 0 - Idle
 // 1 - Strike
@@ -115,28 +116,6 @@ int main(void)
     .Mode = GPIO_MODE_OUTPUT_PP,
   });
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, 1);
-
-  while (0) {
-    HAL_Delay(500);
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-
-    static int count = 0;
-    if (++count == 6) {
-      HAL_RCC_OscConfig(&(RCC_OscInitTypeDef){
-        .OscillatorType = RCC_OSCILLATORTYPE_HSE,
-        .HSEState = RCC_HSE_BYPASS_ENABLE,
-      });
-      HAL_RCC_ClockConfig(&(RCC_ClkInitTypeDef){
-        .ClockType =
-          RCC_CLOCKTYPE_SYSCLK |
-          RCC_CLOCKTYPE_HCLK |
-          RCC_CLOCKTYPE_PCLK1,
-        .SYSCLKSource = RCC_SYSCLKSOURCE_HSE, // 24 MHz
-        .AHBCLKDivider = RCC_SYSCLK_DIV1,
-        .APB1CLKDivider = RCC_HCLK_DIV1,
-      }, FLASH_LATENCY_1);
-    }
-  }
 
   // ====== (TIM1) Timer for servo control ======
   // PA7 - TIM1_CH4
@@ -215,6 +194,8 @@ int main(void)
 
   while (1) {
     if (op == 0) {
+      uint32_t t = HAL_GetTick();
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, (t % 1024 < 20) || (t - rx_timestamp < 200));
       HAL_PWR_EnterSLEEPMode(PWR_SLEEPENTRY_WFI);
     } else if (op == 1) {
       strike(strike_vel);
@@ -239,6 +220,8 @@ static const uint32_t vel_lut[256] = {
 61560, 61365, 61171, 60977, 60784, 60592, 60401, 60209, 60019, 59829, 59640, 59451, 59263, 59076, 58889, 58703, 58517, 58332, 58148, 57964, 57780, 57598, 57415, 57234, 57053, 56872, 56693, 56513, 56335, 56156, 55979, 55802, 55625, 55449, 55274, 55099, 54925, 54751, 54578, 54405, 54233, 54062, 53891, 53720, 53550, 53381, 53212, 53044, 52876, 52709, 52542, 52376, 52210, 52045, 51881, 51717, 51553, 51390, 51227, 51065, 50904, 50743, 50582, 50423, 50263, 50104, 49946, 49788, 49630, 49473, 49317, 49161, 49005, 48850, 48696, 48542, 48388, 48235, 48083, 47931, 47779, 47628, 47477, 47327, 47177, 47028, 46879, 46731, 46583, 46436, 46289, 46143, 45997, 45851, 45706, 45562, 45418, 45274, 45131, 44988, 44846, 44704, 44563, 44422, 44281, 44141, 44002, 43862, 43724, 43585, 43448, 43310, 43173, 43037, 42900, 42765, 42630, 42495, 42360, 42226, 42093, 41960, 41827, 41695, 41563, 41431, 41300, 41170, 41040, 40910, 40780, 40651, 40523, 40395, 40267, 40139, 40013, 39886, 39760, 39634, 39509, 39384, 39259, 39135, 39011, 38888, 38765, 38642, 38520, 38398, 38277, 38156, 38035, 37915, 37795, 37675, 37556, 37437, 37319, 37201, 37083, 36966, 36849, 36733, 36616, 36501, 36385, 36270, 36155, 36041, 35927, 35813, 35700, 35587, 35475, 35362, 35251, 35139, 35028, 34917, 34807, 34697, 34587, 34478, 34369, 34260, 34151, 34043, 33936, 33828, 33721, 33615, 33509, 33403, 33297, 33192, 33087, 32982, 32878, 32774, 32670, 32567, 32464, 32361, 32259, 32157, 32055, 31954, 31852, 31752, 31651, 31551, 31451, 31352, 31253, 31154, 31055, 30957, 30859, 30762, 30664, 30567, 30471, 30374, 30278, 30183, 30087, 29992, 29897, 29803, 29708, 29614, 29521, 29427, 29334, 29241, 29149, 29057, 28965, 28873, 28782, 28691, 28600, 28510, 28420, 28330, 28240, 28151, 28062, 27973, 27884, 27796, 27708, 27621, 27533, 27446
 };
 
+#pragma GCC push_options
+#pragma GCC optimize("O3")
 inline void strike_init()
 {
   TIM1->CCR4 = sin_lut[0];
@@ -251,6 +234,7 @@ inline void strike(uint8_t strike_vel)
   }
   TIM1->CCR4 = sin_lut[0];
 }
+#pragma GCC pop_options
 
 static inline void serial_tx(const uint8_t *buf, uint8_t len)
 {
@@ -293,8 +277,7 @@ static inline void serial_rx_process_byte(uint8_t c)
       uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
       if (s == 0x2144DF1C) {
         // Process command
-        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-
+        rx_timestamp = HAL_GetTick();
         uint8_t out_len = 0;
         uint8_t out_buf[24];
         if (rx_len >= 2 && rx_buf[0] == 0x01) {
