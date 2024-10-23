@@ -315,7 +315,7 @@ int main()
     gpio_put(ACT_1, parity ^= 1);
     uint8_t port = (uint8_t)parity;
     port = 0;
-    serial_tx(port, (uint8_t *)"\x01", 1);
+    serial_tx(port, (uint8_t *)(parity ? "\x01\x10" : "\x01\xf0"), 2);
 
     // Timeout 200 ms
     bool check_ack(uint8_t len, const uint8_t *buf) {
@@ -327,13 +327,14 @@ int main()
     if (result) {
       // Blink for inspection
       gpio_put(ACT_2, 1); sleep_ms(100); gpio_put(ACT_2, 0);
+      sleep_ms(600);
     } else {
       my_printf("NACK!\n");
       for (int i = 0; i < 3; i++) {
-        gpio_put(ACT_2, 1); sleep_ms(20); gpio_put(ACT_2, 0); sleep_ms(20);
+        gpio_put(ACT_2, 1); sleep_ms(50); gpio_put(ACT_2, 0); sleep_ms(50);
       }
     }
-    sleep_ms(500);
+    sleep_ms(300);
   }
 
   while (1) {

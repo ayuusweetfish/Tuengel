@@ -43,6 +43,7 @@ Ping
     +01..10 UID
 Strike
   +00 [0x01] Strike
+  +01 Velocity
   Response
     +00 [0xAA] Done
-        [0xAB] Already in progress
+        [0xAB] Another operation in progress, ignored
