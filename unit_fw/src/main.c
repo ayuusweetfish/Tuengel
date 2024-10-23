@@ -50,6 +50,23 @@ static UART_HandleTypeDef uart1;
 static uint8_t rx_len = 0;
 static uint8_t rx_buf[256 + 4];
 
+static inline void spin_delay(uint32_t cycles)
+{
+  __asm__ volatile (
+    "   cmp %[cycles], #5\n"
+    "   ble 2f\n"
+    "   sub %[cycles], #5\n"
+    "   lsr %[cycles], #2\n"
+    "1: sub %[cycles], #1\n"
+    "   nop\n"
+    "   bne 1b\n"   // 2 cycles if taken
+    "2: \n"
+    : [cycles] "+l" (cycles)
+    : // No output
+    : "cc"
+  );
+}
+
 int main(void)
 {
   HAL_Init();
@@ -238,7 +255,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *_uart1)
     uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
     if (s == 0x2144DF1C) {
       HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-      HAL_Delay(3);
+      spin_delay(12000);  // 500 us
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
       HAL_UART_Transmit(&uart1, (uint8_t *)"\x01\xAA\x7b\xa5\x01\xe4", 6, 1000);
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);

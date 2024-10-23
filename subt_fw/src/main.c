@@ -45,8 +45,7 @@ static uint32_t sm_uart_dnstrm_rx = 3;
 static inline void uart_tx_wait(PIO pio, uint32_t sm)
 {
   while (!pio_sm_is_tx_fifo_empty(pio, sm)) { }
-  // sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
-  sleep_us(15);   // 1 cycle @ (9600 bps * 8) = 13.02 us
+  sleep_us(3);  // 1 cycle @ (115200 bps * 8) = 1.085 us
   while (pio_interrupt_get(pio, sm + 0)) { }
 }
 
@@ -233,6 +232,7 @@ static void usb_serial_in_cb(__attribute__((unused)) void *_a)
   critical_section_exit(&serial_crits);
 }
 
+// PIO0 IRQ0 signals RXNE at upstream-facing port
 static void pio0_irq0_handler()
 {
   if (!pio_sm_is_rx_fifo_empty(pio0, sm_uart_upstrm_rx)) {
@@ -285,8 +285,8 @@ int main()
   // Upstream-facing port
   uart_tx_program_init(pio0, sm_uart_upstrm_tx, uart_tx_program_offset, 115200);
   uart_rx_program_init(pio0, sm_uart_upstrm_rx, uart_rx_program_offset, 115200);
+  // PIO0 IRQ0 signals RXNE at upstream-facing port
   pio_set_irq0_source_enabled(pio0, PIO_INTR_SM1_RXNEMPTY_LSB, true);
-
   upstrm_dir(0);
 
   // Downstream-facing port
@@ -299,12 +299,16 @@ int main()
     gpio_put(ACT_1, parity ^= 1);
     serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
 
-    // Timeout 750 ms
+    // Timeout 200 ms
     bool check_ack(uint8_t len, const uint8_t *buf) {
       return len >= 1 && buf[0] == 0xAA;
     }
-    serial_rx_blocking((uint8_t)parity, 750000, check_ack);
-    sleep_ms(250);
+    bool result = serial_rx_blocking((uint8_t)parity, 200000, check_ack);
+    if (result) {
+      // Blink for inspection
+      gpio_put(ACT_2, 1); sleep_ms(100); gpio_put(ACT_2, 0);
+    }
+    sleep_ms(500);
   }
 
   while (1) {
