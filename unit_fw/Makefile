@@ -221,7 +221,7 @@ endif
 
 print-uid:
 ifeq ($(FLASH_PROGRM),pyocd)
-	$(PYOCD_EXE) cmd -c 'read8 0x1fff0e00 16' -t $(PYOCD_DEVICE) --config ./debug/pyocd.yaml
+	$(PYOCD_EXE) cmd -c 'read8 0x1fff0000 16' -t $(PYOCD_DEVICE) --config ./debug/pyocd.yaml
 endif
 
 debug:

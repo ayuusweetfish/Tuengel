@@ -49,6 +49,8 @@ static UART_HandleTypeDef uart1;
 
 static uint8_t rx_len = 0;
 static uint8_t rx_buf[256 + 4];
+static uint8_t rx_ptr = 0;
+static uint8_t rx_byte;
 
 // 0 - Idle
 // 1 - Strike
@@ -195,7 +197,7 @@ int main(void)
 
   HAL_NVIC_SetPriority(USART1_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(USART1_IRQn);
-  HAL_UART_Receive_IT(&uart1, rx_buf, 1);
+  HAL_UART_Receive_IT(&uart1, &rx_byte, 1);
 
 /*
 from math import *
@@ -225,6 +227,75 @@ print(', '.join('%d' % round(1500 + 200*(-cos(i/N*2*pi))) for i in range(N)))
   }
 }
 
+static inline void serial_tx(const uint8_t *buf, uint8_t len)
+{
+  uint32_t s = crc32_bulk(buf, len);
+  uint8_t s8[4] = {
+    (uint8_t)(s >>  0),
+    (uint8_t)(s >>  8),
+    (uint8_t)(s >> 16),
+    (uint8_t)(s >> 24),
+  };
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
+  HAL_UART_Transmit(&uart1, &len, 1, HAL_MAX_DELAY);
+  HAL_UART_Transmit(&uart1, (uint8_t *)buf, len, HAL_MAX_DELAY);
+  HAL_UART_Transmit(&uart1, s8, 4, HAL_MAX_DELAY);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
+}
+
+static inline void serial_rx_process_byte(uint8_t c)
+{
+  static uint32_t last_timestamp = (uint32_t)-100;
+  uint32_t t = HAL_GetTick();
+  if (t - last_timestamp >= 100) {
+    // Reset
+    rx_len = 0;
+  }
+  last_timestamp = t;
+
+  if (rx_len == 0) {
+    if (c == 0) {
+      // Ignore empty packet
+    } else {
+      // Receive payload
+      rx_len = c;
+      rx_ptr = 0;
+    }
+  } else {
+    rx_buf[rx_ptr++] = c;
+    if (rx_ptr == (uint32_t)rx_len + 4) {
+      // Packet complete! Verify checksum
+      uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
+      if (s == 0x2144DF1C) {
+        // Process command
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+
+        uint8_t out_len = 0;
+        uint8_t out_buf[24];
+        if (rx_buf[0] == 0x01) {
+          // Strike
+          out_len = 1;
+          out_buf[0] = (op == 1 ? 0xAB : 0xAA);
+          op = 1;
+        } else if (rx_buf[0] == 0x55) {
+          out_len = 17;
+          out_buf[0] = 0xAA;
+          for (int i = 0; i < 16; i++)
+            out_buf[i] = *((uint8_t *)UID_BASE + i);
+        }
+
+        if (out_len != 0) {
+          spin_delay(24000);  // 1 ms
+          serial_tx(out_buf, out_len);
+        }
+      }
+      // Ignore if checksum incorrect
+      // Wait for next packet
+      rx_len = 0;
+    }
+  }
+}
+
 void NMI_Handler() { while (1) { } }
 void HardFault_Handler() { while (1) { } }
 void SVC_Handler() { while (1) { } }
@@ -240,32 +311,6 @@ void USART1_IRQHandler()
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *_uart1)
 {
-  if (rx_len == 0) {
-    uint8_t len = rx_buf[0];
-    if (len == 0) {
-      // Ignore empty packet
-      HAL_UART_Receive_IT(&uart1, rx_buf, 1);
-    } else {
-      // Receive payload
-      rx_len = len;
-      HAL_UART_Receive_IT(&uart1, rx_buf, (uint32_t)len + 4);
-    }
-  } else {
-    // Packet complete!
-    uint32_t s = crc32_bulk(rx_buf, (uint32_t)rx_len + 4);
-    if (s == 0x2144DF1C) {
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-      if (rx_buf[0] == 0x01) {
-        // Strike
-        op = 1;
-      }
-      spin_delay(12000);  // 500 us
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-      HAL_UART_Transmit(&uart1, (uint8_t *)"\x01\xAA\x7b\xa5\x01\xe4", 6, 1000);
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
-    }
-    // Wait for next packet
-    rx_len = 0;
-    HAL_UART_Receive_IT(&uart1, rx_buf, 1);
-  }
+  serial_rx_process_byte(rx_byte);
+  HAL_UART_Receive_IT(&uart1, &rx_byte, 1);
 }

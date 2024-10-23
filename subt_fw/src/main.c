@@ -135,18 +135,29 @@ static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(
 
   while (true) {
     uint16_t len = pio_sm_get_8_blocking(pio0, sm_uart_dnstrm_rx, timeout);
-    if (len >= 256) return false; // Timeout
+    // if (len >= 256) return false; // Timeout
+    if (len >= 256) {
+      my_printf("Timeout at header\n");
+      return false;
+    }
 
     if (len > 0) {
       static uint8_t buf[256 + 4];
       for (int i = 0; i < (int)len + 4; i++) {
         uint16_t c = pio_sm_get_8_blocking(pio0, sm_uart_dnstrm_rx, timeout);
-        if (c >= 256) return false; // Timeout
+        if (c >= 256) {
+          my_printf("Timeout at byte %d/%u\n", i, (unsigned)len);
+          for (int j = 0; j < i; j++) my_printf(" %02x", (unsigned)buf[j]); my_printf("\n");
+          return false; // Timeout
+        }
         buf[i] = c;
       }
       uint32_t s = crc32_bulk(buf, (int)len + 4);
       if (s == 0x2144DF1C) {
         if (f((uint8_t)len, buf)) return true;
+      } else {
+        my_printf("CRC error");
+        for (int i = 0; i < (int)len + 4; i++) my_printf(" %02x", (unsigned)buf[i]); my_printf("\n");
       }
     }
   }
@@ -297,16 +308,24 @@ int main()
   while (1) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
-    serial_tx((uint8_t)parity, (uint8_t *)"\x01", 1);
+    uint8_t port = (uint8_t)parity;
+    port = 0;
+    serial_tx(port, (uint8_t *)"\x01", 1);
 
     // Timeout 200 ms
     bool check_ack(uint8_t len, const uint8_t *buf) {
+      my_printf("ACK? len=%08x payload=%08x\n", (unsigned)len, (unsigned)buf[0]);
       return len >= 1 && buf[0] == 0xAA;
     }
-    bool result = serial_rx_blocking((uint8_t)parity, 200000, check_ack);
+    bool result = serial_rx_blocking(port, 200000, check_ack);
     if (result) {
       // Blink for inspection
       gpio_put(ACT_2, 1); sleep_ms(100); gpio_put(ACT_2, 0);
+    } else {
+      my_printf("NACK!\n");
+      for (int i = 0; i < 3; i++) {
+        gpio_put(ACT_2, 1); sleep_ms(20); gpio_put(ACT_2, 0); sleep_ms(20);
+      }
     }
     sleep_ms(500);
   }

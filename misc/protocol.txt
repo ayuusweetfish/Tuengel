@@ -45,3 +45,4 @@ Strike
   +00 [0x01] Strike
   Response
     +00 [0xAA] Done
+        [0xAB] Already in progress
