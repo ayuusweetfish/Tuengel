@@ -197,10 +197,10 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
       }
       resp_len = 16;
 
-    } else if (len == 3 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
+    } else if (len >= 2 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
       uint8_t addr_l1 = buf[0];
       uint8_t addr_u = buf[1];
-      uint8_t velocity = buf[2];
+      uint8_t velocity = (len >= 3 ? buf[2] : 0x80);
       // Send to downstream port
       uint8_t dnstrm_msg[2] = {addr_u, velocity};
       uint8_t port = addr_l1;
@@ -256,6 +256,9 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
       bool result = serial_rx_blocking(port, 20000, check_ack);
 
       resp[0] = (result ? resp_byte : 0xEE);
+      resp_len = 1;
+    } else if (len == 2) {  // XXX: Out-of-range. TODO: Better reporting
+      resp[0] = 0xEE;
       resp_len = 1;
     }
   }
