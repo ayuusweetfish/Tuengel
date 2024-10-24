@@ -34,6 +34,10 @@ static inline uint16_t pio_sm_get_8_blocking(PIO pio, uint sm, uint64_t timeout)
     if (time_us_64() - timeout < (1ULL << 63)) return 0x8000;
   return (uint16_t)pio_sm_get_8(pio, sm);
 }
+static inline void pio_sm_flush_rx_fifo(PIO pio, uint sm)
+{
+  while (!pio_sm_is_rx_fifo_empty(pio, sm)) pio_sm_get(pio, sm);
+}
 
 static const uint8_t PIN_UPSTRM_DIR = 0;
 static const uint8_t PIN_UPSTRM_DATA = 1;
@@ -65,6 +69,7 @@ static inline void uart_dir(PIO pio, uint32_t sm_rx, uint32_t sm_tx, uint32_t de
     pio_sm_set_enabled(pio, sm_rx, true);
   } else {
     pio_sm_set_enabled(pio, sm_rx, false);
+    pio_sm_flush_rx_fifo(pio, sm_rx);
     uart_tx_wait(pio, sm_tx);
     pio_sm_set_enabled(pio, sm_tx, false);
     gpio_put(de_pin, 0);
@@ -136,12 +141,14 @@ static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(
 
   dnstrm_dir(port, 0);  // Change pin
 
+  bool ret;
+
   while (true) {
     uint16_t len = pio_sm_get_8_blocking(pio0, sm_uart_dnstrm_rx, timeout);
     if (len >= 256) {
       if (SERIAL_DNSTRM_INSPECT)
         my_printf("Timeout at header\n");
-      return false;
+      ret = false; break;
     }
 
     if (len > 0) {
@@ -153,13 +160,13 @@ static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(
             my_printf("Timeout at byte %d/%u\n", i, (unsigned)len);
             for (int j = 0; j < i; j++) my_printf(" %02x", (unsigned)buf[j]); my_printf("\n");
           }
-          return false;
+          ret = false; break;
         }
         buf[i] = c;
       }
       uint32_t s = crc32_bulk(buf, (int)len + 4);
       if (s == 0x2144DF1C) {
-        if (f((uint8_t)len, buf)) return true;
+        if (f((uint8_t)len, buf)) { ret = true; break; }
       } else {
         if (SERIAL_DNSTRM_INSPECT) {
           my_printf("CRC error");
@@ -168,6 +175,9 @@ static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(
       }
     }
   }
+
+  dnstrm_dir(port, -1);
+  return ret;
 }
 
 static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
