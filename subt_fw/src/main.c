@@ -18,6 +18,8 @@
 #include "debug_print.h"
 static const bool SERIAL_DNSTRM_INSPECT = false;
 
+static const bool IS_L0 = true;
+
 #define ACT_1 28
 #define ACT_2 29
 
@@ -173,16 +175,47 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
   uint8_t serial_cmd_port =
     (serial_rx_last_cmd_source == SERIAL_CMD_SRC_USB ? PORT_USB : PORT_UPSTRM);
 
-  if (buf[0] == 0x55) {
-    // Ping
-    uint8_t resp[16] = { 0 };
-    resp[0] = 0xAA;
-    resp[1] = 't';
-    resp[2] = 'e';
-    resp[3] = 's';
-    resp[4] = 't';
-    serial_tx(serial_cmd_port, resp, 16);
+  uint8_t resp[256];
+  uint8_t resp_len = 0;
+
+  if (IS_L0) {
+    if (buf[0] == 0x55) {
+      // Ping
+      resp[0] = 0xAA;
+      resp[1] = 't';
+      resp[2] = 'e';
+      resp[3] = 's';
+      resp[4] = 't';
+      resp_len = 5;
+
+    } else if (len == 3 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
+      uint8_t addr_l1 = buf[0];
+      uint8_t addr_u = buf[1];
+      uint8_t velocity = buf[2];
+      // Send to downstream port
+      uint8_t dnstrm_msg[2] = {addr_u, velocity};
+      uint8_t port = addr_l1;
+      serial_tx(port, dnstrm_msg, 2);
+
+      // Timeout 20 ms
+      bool check_ack(uint8_t len, const uint8_t *buf) {
+        if (SERIAL_DNSTRM_INSPECT)
+          my_printf("ACK? len=%08x payload=%08x\n", (unsigned)len, (unsigned)buf[0]);
+        return len >= 1 && buf[0] == 0xAA;
+      }
+      bool result = serial_rx_blocking(port, 20000, check_ack);
+
+      resp[0] = (result ? 0x01 : 0xEE);
+      resp_len = 1;
+
+    } else {
+      resp[0] = 0xEF;
+      resp_len = 1;
+    }
   }
+
+  if (resp_len != 0)
+    serial_tx(serial_cmd_port, resp, resp_len);
 }
 
 // Take to a separate buffer
@@ -240,7 +273,7 @@ static void usb_serial_in_cb(__attribute__((unused)) void *_a)
   while (true) {
     int c = stdio_getchar_timeout_us(0);
     if (c == PICO_ERROR_TIMEOUT) break;
-    assert(c >= 0 && c < 255);
+    assert(c >= 0 && c < 256);
     serial_rx_push_byte((uint8_t)c);
   }
   serial_rx_last_cmd_source = SERIAL_CMD_SRC_USB;
@@ -310,7 +343,7 @@ int main()
   uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 115200);
   dnstrm_dir(0, -1);
 
-  while (1) {
+  while (0) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
     uint8_t port = (uint8_t)parity;
@@ -342,18 +375,9 @@ int main()
     static int count = 0;
     if (++count == 500) {
       count = 0; parity ^= 1;
-      upstrm_dir(-1);
-      if (parity == 0) {
-        uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 5);
-        uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 6);
-      } else {
-        uart_tx_set_pin(pio0, sm_uart_upstrm_tx, 7);
-        uart_rx_set_pin(pio0, sm_uart_upstrm_rx, 8);
-      }
-      upstrm_dir(0);
     }
 
-    gpio_put(ACT_1, (parity | stdio_usb_connected()));
+    gpio_put(ACT_1, parity);
     gpio_put(ACT_2, stdio_usb_connected());
     sleep_ms(2);
 

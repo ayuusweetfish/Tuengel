@@ -1,6 +1,9 @@
 // Sends a packet with the format: <1 byte length> <payload> <CRC-32 little-endian>
 // gcc % -O2 -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
 
+// ./a.out /dev/tty.usbmodem* 115200 55 00 12
+// ./a.out /dev/tty.usbmodem* 115200 00 00 80
+
 // NOTE: `kIOMainPortDefault` is valid for macOS 12.0+.
 // For previous versions, replace it with `kIOMasterPortDefault` in `libserialport/macosx.c` and rebuild.
 
@@ -44,8 +47,10 @@ static inline const uint8_t *rx(uint8_t *o_len)
   int n_rx;
   uint8_t len;
 
+  static const unsigned READ_TIMEOUT = 100;
+
 restart:
-  n_rx = check(sp_blocking_read(port, &len, 1, 100));
+  n_rx = check(sp_blocking_read(port, &len, 1, READ_TIMEOUT));
   ensure(n_rx == 1);
   if (len == 0) {
     printf("(ignoring empty packet)\n");
@@ -54,7 +59,7 @@ restart:
 
   printf("[%02x]\n", len);
   static uint8_t rx_buf[255 + 4];
-  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, 100));
+  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, READ_TIMEOUT));
   for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
   ensure(n_rx == len + 4);
 
@@ -72,7 +77,7 @@ restart:
 int main(int argc, char **argv)
 {
   if (argc <= 1) {
-    printf("Usage: %s <port> [<baud rate>]\n", argc == 0 ? "serial" : argv[0]);
+    printf("Usage: %s <port> [<baud rate> <byte> <byte> ...]\n", argc == 0 ? "serial" : argv[0]);
     return 0;
   }
 
@@ -91,7 +96,16 @@ int main(int argc, char **argv)
 
   sp_flush(port, SP_BUF_BOTH);
 
-  tx((uint8_t *)"\x55", 1);
+  int tx_len = (argc >= 4 ? argc - 3 : 1);
+  uint8_t *tx_buf = (uint8_t *)malloc(tx_len);
+  if (argc >= 4) {
+    if (tx_len > 255) tx_len = 255;
+    for (int i = 0; i < tx_len; i++) tx_buf[i] = strtol(argv[3 + i], NULL, 16);
+  } else {
+    tx_buf[0] = 0x55;
+  }
+
+  tx(tx_buf, tx_len);
   uint8_t resp_len;
   const uint8_t *resp = rx(&resp_len);
   if (resp != NULL) {

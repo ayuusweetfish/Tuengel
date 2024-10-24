@@ -17,9 +17,10 @@ Ping
 Strike
   +00 [0x00~0x3F] Out addr (L1)
   +01 [0x00~0x3F] Out addr (U)
-  +02 [0x01] Strike
+  +02 Velocity
   Response
     +00 [0x01] Done
+        [0xEE] Timeout/error
 
 L0 - L1
 Ping
@@ -31,9 +32,10 @@ Ping
     +03 Bitmask 23~16
 Strike
   +00 [0x00~0x3F] Out addr (U)
-  +01 [0x01] Strike
+  +01 Velocity
   Response
     +00 [0x01] Done
+        [0xEE] Timeout/error
 
 L1 - U
 Ping
