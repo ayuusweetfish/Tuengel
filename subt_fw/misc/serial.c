@@ -38,8 +38,10 @@ static inline void tx(const uint8_t *buf, uint8_t len)
     (uint8_t)(s >> 16),
     (uint8_t)(s >> 24),
   };
+if (0) {
   n_tx = check(sp_blocking_write(port, s8, 4, 100));
   ensure(n_tx == 4);
+}
 
   printf("[%02x]", (unsigned)len);
   for (int i = 0; i < len; i++) printf(" %02x", (unsigned)buf[i]);

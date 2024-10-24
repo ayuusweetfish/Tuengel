@@ -165,6 +165,10 @@ static inline bool serial_rx_blocking(uint8_t port, uint64_t timeout, bool (*f)(
       }
       uint32_t s = crc32_bulk(buf, (int)len + 4);
       if (s == 0x2144DF1C) {
+        if (SERIAL_DNSTRM_INSPECT) {
+          my_printf("received");
+          for (int i = 0; i < (int)len + 4; i++) my_printf(" %02x", (unsigned)buf[i]); my_printf("\n");
+        }
         if (f((uint8_t)len, buf)) { ret = true; break; }
       } else {
         if (SERIAL_DNSTRM_INSPECT) {
@@ -282,29 +286,35 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
 
 // Take to a separate buffer
 // Returns the number of bytes processed
-static inline uint32_t serial_rx_take(uint8_t *restrict buf, uint32_t size, uint8_t *restrict out_buf)
+static inline uint32_t serial_rx_take(uint8_t *restrict buf, uint32_t size, uint8_t *restrict out_buf, bool is_usb)
 {
   uint32_t i = 0;
+  uint32_t checksum_len = (is_usb ? 0 : 4);
   while (i < size) {
     uint8_t len = buf[i++];
     if (len == 0) continue; // Stray zeros, do not verify checksum
-    if (i + len + 4 > size) { i--; break; } // Insufficient length
-    i += len + 4;
+    if (i + len + checksum_len > size) { i--; break; }  // Insufficient length
+    i += len + checksum_len;
   }
   memmove(out_buf, buf, i);
   memmove(buf, buf + i, size - i);
   return i;
 }
 // Process a block of data
-static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size)
+static inline void serial_rx_bulk(const uint8_t *buf, uint32_t size, bool is_usb)
 {
   uint32_t i = 0;
   while (i < size) {
     uint8_t len = buf[i++];
     if (len == 0) continue; // Stray zeros, do not verify checksum
-    uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
-    if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
-    i += len + 4;
+    if (is_usb) {
+      serial_rx_process_cmd(buf + i, len);
+      i += len;
+    } else {
+      uint32_t s = crc32_bulk(buf + i, (uint32_t)len + 4);
+      if (s == 0x2144DF1C) serial_rx_process_cmd(buf + i, len);
+      i += len + 4;
+    }
   }
 }
 
@@ -408,36 +418,17 @@ int main()
   while (0) {
     static bool parity = 0;
     gpio_put(ACT_1, parity ^= 1);
-    uint8_t port = (uint8_t)parity;
-    port = 0;
-    serial_tx(port, (uint8_t *)(parity ? "\x01\x10" : "\x01\xf0"), 2);
-
-    // Timeout 200 ms
+    uint8_t dnstrm_msg[2] = {0x09, parity ? 0x80 : 0x82};
+    serial_tx(0x00, dnstrm_msg, 2);
     bool check_ack(uint8_t len, const uint8_t *buf) {
-      if (SERIAL_DNSTRM_INSPECT)
-        my_printf("ACK? len=%08x payload=%08x\n", (unsigned)len, (unsigned)buf[0]);
-      return len >= 1 && buf[0] == 0xAA;
+      my_printf("[%02x]", len);
+      for (int i = 0; i < len; i++) my_printf(" %02x", (unsigned)buf[i]);
+      my_printf("\n");
+      return true;
     }
-    bool result = serial_rx_blocking(port, 200000, check_ack);
-    if (result) {
-      // Blink for inspection
-      gpio_put(ACT_2, 1); sleep_ms(100); gpio_put(ACT_2, 0);
-      sleep_ms(600);
-    } else {
-      my_printf("NACK!\n");
-      for (int i = 0; i < 3; i++) {
-        gpio_put(ACT_2, 1); sleep_ms(50); gpio_put(ACT_2, 0); sleep_ms(50);
-      }
-    }
-    sleep_ms(300);
-  }
-
-  while (0) {
-    static bool parity = 0;
-    gpio_put(ACT_1, parity ^= 1);
-    // serial_rx_process_cmd((const uint8_t *)"\x00\x10", 2);
-    // serial_rx_process_cmd((const uint8_t *)"\x00\x00\x80", 3);
-    sleep_ms(500);
+    bool result = serial_rx_blocking(0x00, 20000, check_ack);
+    my_printf("result %u\n", (unsigned)result);
+    sleep_ms(1000);
   }
 
   while (1) {
@@ -456,9 +447,10 @@ int main()
     // as well as enable interrupts during processing
     static uint8_t serial_rx_buf_local[sizeof serial_rx_buf];
     critical_section_enter_blocking(&serial_crits);
-    uint32_t len = serial_rx_take(serial_rx_buf, serial_rx_ptr, serial_rx_buf_local);
+    bool is_usb = (serial_rx_last_cmd_source == SERIAL_CMD_SRC_USB);
+    uint32_t len = serial_rx_take(serial_rx_buf, serial_rx_ptr, serial_rx_buf_local, is_usb);
     serial_rx_ptr -= len;
     critical_section_exit(&serial_crits);
-    serial_rx_bulk(serial_rx_buf_local, len);
+    serial_rx_bulk(serial_rx_buf_local, len, is_usb);
   }
 }
