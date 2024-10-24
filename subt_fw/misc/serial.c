@@ -40,6 +40,12 @@ static inline void tx(const uint8_t *buf, uint8_t len)
   };
   n_tx = check(sp_blocking_write(port, s8, 4, 100));
   ensure(n_tx == 4);
+
+  printf("[%02x]", (unsigned)len);
+  for (int i = 0; i < len; i++) printf(" %02x", (unsigned)buf[i]);
+  printf(" |");
+  for (int i = 0; i < 4; i++) printf(" %02x", (unsigned)s8[i]);
+  putchar('\n');
 }
 
 static inline const uint8_t *rx(uint8_t *o_len, unsigned timeout)
