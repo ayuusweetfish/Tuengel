@@ -3,4 +3,5 @@
 **/~*.lck
 misc/testrun1_fw/.pio/
 subt_fw/build/
+subt_fw/build_release/
 unit_fw/build/

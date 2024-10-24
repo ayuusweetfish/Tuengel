@@ -34,10 +34,6 @@ static inline uint16_t pio_sm_get_8_blocking(PIO pio, uint sm, uint64_t timeout)
     if (time_us_64() - timeout < (1ULL << 63)) return 0x8000;
   return (uint16_t)pio_sm_get_8(pio, sm);
 }
-static inline void pio_sm_flush_rx_fifo(PIO pio, uint sm)
-{
-  while (!pio_sm_is_rx_fifo_empty(pio, sm)) pio_sm_get(pio, sm);
-}
 
 static const uint8_t PIN_UPSTRM_DIR = 0;
 static const uint8_t PIN_UPSTRM_DATA = 1;
@@ -61,18 +57,21 @@ static inline void uart_dir(PIO pio, uint32_t sm_rx, uint32_t sm_tx, uint32_t de
   if (tx_mode == 1) {
     pio_sm_set_enabled(pio, sm_rx, false);
     gpio_put(de_pin, 1);
+    pio_sm_clear_fifos(pio, sm_rx);
     pio_sm_set_enabled(pio, sm_tx, true);
   } else if (tx_mode == 0) {
     uart_tx_wait(pio, sm_tx);
     pio_sm_set_enabled(pio, sm_tx, false);
     gpio_put(de_pin, 0);
+    pio_sm_clear_fifos(pio, sm_tx);
     pio_sm_set_enabled(pio, sm_rx, true);
   } else {
     pio_sm_set_enabled(pio, sm_rx, false);
-    pio_sm_flush_rx_fifo(pio, sm_rx);
     uart_tx_wait(pio, sm_tx);
     pio_sm_set_enabled(pio, sm_tx, false);
     gpio_put(de_pin, 0);
+    pio_sm_clear_fifos(pio, sm_tx);
+    pio_sm_clear_fifos(pio, sm_rx);
   }
 }
 static inline void upstrm_dir(int tx_mode)
