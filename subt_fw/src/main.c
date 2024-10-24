@@ -198,22 +198,54 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
       serial_tx(port, dnstrm_msg, 2);
 
       // Timeout 20 ms
+      uint8_t resp_byte;
       bool check_ack(uint8_t len, const uint8_t *buf) {
-        if (SERIAL_DNSTRM_INSPECT)
-          my_printf("ACK? len=%08x payload=%08x\n", (unsigned)len, (unsigned)buf[0]);
-        return len >= 1 && buf[0] == 0xAA;
+        bool valid = len >= 1 && (buf[0] == 0xAA || buf[0] == 0xAB || buf[0] == 0xEE || buf[0] == 0xED);
+        if (valid) resp_byte = (buf[0] == 0xEE ? 0xED : buf[0]);
+        else resp_byte = 0xEA;  // Received invalid message?
+        return valid;
       }
       bool result = serial_rx_blocking(port, 20000, check_ack);
 
-      resp[0] = (result ? 0x01 : 0xEE);
+      resp[0] = (result ? resp_byte : 0xEE);
       resp_len = 1;
+    }
+  } else {  // L1
+    if (buf[0] == 0x55) {
+      // Ping
+      resp[0] = 0xAA;
+      resp[1] = 't';
+      resp[2] = 'e';
+      resp[3] = 's';
+      resp[4] = 't';
+      resp_len = 5;
 
-    } else {
-      resp[0] = 0xEF;
+    } else if (len == 2 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
+      uint8_t addr_u = buf[0];
+      uint8_t velocity = buf[1];
+      // Send to downstream port
+      uint8_t dnstrm_msg[2] = {0x01, velocity};
+      uint8_t port = addr_u;
+      serial_tx(port, dnstrm_msg, 2);
+
+      // Timeout 20 ms
+      uint8_t resp_byte;
+      bool check_ack(uint8_t len, const uint8_t *buf) {
+        bool valid = len >= 1 && (buf[0] == 0xAA || buf[0] == 0xAB || buf[0] == 0xEE || buf[0] == 0xED);
+        if (valid) resp_byte = (buf[0] == 0xEE ? 0xED : buf[0]);
+        return valid;
+      }
+      bool result = serial_rx_blocking(port, 20000, check_ack);
+
+      resp[0] = (result ? resp_byte : 0xEE);
       resp_len = 1;
     }
   }
 
+  if (resp_len == 0) {
+    resp[0] = 0xEF; // Unrecognised message
+    resp_len = 1;
+  }
   if (resp_len != 0)
     serial_tx(serial_cmd_port, resp, resp_len);
 }
@@ -368,6 +400,14 @@ int main()
       }
     }
     sleep_ms(300);
+  }
+
+  while (0) {
+    static bool parity = 0;
+    gpio_put(ACT_1, parity ^= 1);
+    // serial_rx_process_cmd((const uint8_t *)"\x00\x10", 2);
+    // serial_rx_process_cmd((const uint8_t *)"\x00\x00\x80", 3);
+    sleep_ms(500);
   }
 
   while (1) {

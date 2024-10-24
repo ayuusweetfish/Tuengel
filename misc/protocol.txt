@@ -19,7 +19,9 @@ Strike
   +01 [0x00~0x3F] Out addr (U)
   +02 Velocity
   Response
-    +00 [0x01] Done
+    +00 [0xAA] Done
+        [0xAB] Another operation in progress, ignored
+        [0xED] Timeout/error at downstream
         [0xEE] Timeout/error
 
 L0 - L1
@@ -34,7 +36,8 @@ Strike
   +00 [0x00~0x3F] Out addr (U)
   +01 Velocity
   Response
-    +00 [0x01] Done
+    +00 [0xAA] Done
+        [0xAB] Another operation in progress, ignored
         [0xEE] Timeout/error
 
 L1 - U
