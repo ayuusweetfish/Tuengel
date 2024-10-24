@@ -293,7 +293,7 @@ static inline void serial_rx_process_byte(uint8_t c)
           out_len = 17;
           out_buf[0] = 0xAA;
           for (int i = 0; i < 16; i++)
-            out_buf[i] = *((uint8_t *)UID_BASE + i);
+            out_buf[1 + i] = *((uint8_t *)UID_BASE + i);
         }
 
         if (out_len != 0) {

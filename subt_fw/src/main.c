@@ -182,11 +182,20 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
     if (buf[0] == 0x55) {
       // Ping
       resp[0] = 0xAA;
-      resp[1] = 't';
-      resp[2] = 'e';
-      resp[3] = 's';
-      resp[4] = 't';
-      resp_len = 5;
+      for (int i = 0; i < 5; i++) {
+        uint8_t dnstrm_msg[1] = {0x55};
+        serial_tx(i, dnstrm_msg, 1);
+        bool check_ack(uint8_t len, const uint8_t *buf) {
+          bool valid = (len >= 1 && buf[0] == 0xAA);
+          if (valid)
+            for (int j = 0; j < 3; j++) resp[1 + i * 3 + j] = buf[1 + j];
+          return valid;
+        }
+        bool result = serial_rx_blocking(i, 150000, check_ack);
+        if (!result)
+          for (int j = 0; j < 3; j++) resp[1 + i * 3 + j] = 0xEE;
+      }
+      resp_len = 16;
 
     } else if (len == 3 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
       uint8_t addr_l1 = buf[0];
@@ -214,11 +223,20 @@ static inline void serial_rx_process_cmd(const uint8_t *buf, uint8_t len)
     if (buf[0] == 0x55) {
       // Ping
       resp[0] = 0xAA;
-      resp[1] = 't';
-      resp[2] = 'e';
-      resp[3] = 's';
-      resp[4] = 't';
-      resp_len = 5;
+      for (int i = 0; i < 3; i++) resp[1 + i] = 0;
+      for (int i = 0; i < 17; i++) {
+        uint8_t dnstrm_msg[1] = {0x55};
+        serial_tx(i, dnstrm_msg, 1);
+        bool check_ack(uint8_t len, const uint8_t *buf) {
+          // XXX: Previous revision of unit firmware incorrectly returns
+          // the unique ID in the first 16 bytes. Support that for now.
+          return (len >= 1 && buf[0] == 0xAA) ||
+            (len >= 17 && (buf[12] == 0x78 || buf[13] == 0x78));
+        }
+        bool result = serial_rx_blocking(i, 5000, check_ack);
+        resp[1 + i / 8] |= ((uint8_t)result << (i % 8));
+      }
+      resp_len = 4;
 
     } else if (len == 2 && buf[0] <= 16) { // XXX: Only 17 ports supported for now
       uint8_t addr_u = buf[0];

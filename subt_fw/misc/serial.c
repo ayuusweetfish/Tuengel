@@ -42,15 +42,13 @@ static inline void tx(const uint8_t *buf, uint8_t len)
   ensure(n_tx == 4);
 }
 
-static inline const uint8_t *rx(uint8_t *o_len)
+static inline const uint8_t *rx(uint8_t *o_len, unsigned timeout)
 {
   int n_rx;
   uint8_t len;
 
-  static const unsigned READ_TIMEOUT = 100;
-
 restart:
-  n_rx = check(sp_blocking_read(port, &len, 1, READ_TIMEOUT));
+  n_rx = check(sp_blocking_read(port, &len, 1, timeout));
   ensure(n_rx == 1);
   if (len == 0) {
     printf("(ignoring empty packet)\n");
@@ -59,7 +57,7 @@ restart:
 
   printf("[%02x]\n", len);
   static uint8_t rx_buf[255 + 4];
-  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, READ_TIMEOUT));
+  n_rx = check(sp_blocking_read(port, rx_buf, len + 4, timeout));
   for (int i = 0; i < n_rx; i++) printf(" %02x", (int)rx_buf[i]); putchar('\n');
   ensure(n_rx == len + 4);
 
@@ -107,7 +105,7 @@ int main(int argc, char **argv)
 
   tx(tx_buf, tx_len);
   uint8_t resp_len;
-  const uint8_t *resp = rx(&resp_len);
+  const uint8_t *resp = rx(&resp_len, (tx_buf[0] == 0x55 ? 1000 : 100));
   if (resp != NULL) {
     for (int i = 0; i < resp_len; i++) printf(" %02x", (int)resp[i]);
     putchar('\n');
