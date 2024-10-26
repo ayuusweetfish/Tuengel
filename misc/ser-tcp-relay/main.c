@@ -1,7 +1,12 @@
-// cc main.c -DLOG_INFO
-// x86_64-w64-mingw32-gcc main.c -DLOG_INFO -lws2_32 -static
+// clang main.c -DLOG_INFO -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
+
+// (cd libserialport-win && ./configure --host=x86_64-w64-mingw32 && make)
+// x86_64-w64-mingw32-gcc main.c -DLOG_INFO -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi
+
+#include "libserialport.h"
 
 #include <errno.h>    // errno
+#include <stdbool.h>  // bool
 #include <stdint.h>   // uint*_t
 #include <stdio.h>    // fprintf
 #include <stdlib.h>   // malloc
@@ -16,6 +21,40 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #endif
+
+static struct sp_port *port;
+
+static int check(enum sp_return result)
+{
+  char *error_message;
+  switch (result) {
+  case SP_ERR_ARG:
+    printf("Error: Invalid argument.\n");
+    abort();
+  case SP_ERR_FAIL:
+    error_message = sp_last_error_message();
+    printf("Error: Failed: %s\n", error_message);
+    sp_free_error_message(error_message);
+    abort();
+  case SP_ERR_SUPP:
+    printf("Error: Not supported.\n");
+    abort();
+  case SP_ERR_MEM:
+    printf("Error: Couldn't allocate memory.\n");
+    abort();
+  case SP_OK:
+  default:
+    return result;
+  }
+}
+static void _ensure(bool cond, const char *cond_name, const char *file, int line)
+{
+  if (!cond) {
+    printf("Error: (%s:%d) condition \"%s\" does not hold\n", file, line, cond_name);
+    abort();
+  }
+}
+#define ensure(_cond) _ensure((_cond), #_cond, __FILE__, __LINE__)
 
 #if defined(_WIN32) || defined(WIN32)
 static inline int err_code() { return WSAGetLastError(); }
@@ -109,9 +148,37 @@ static void *serve_client(void *arg)
   return NULL;
 }
 
+void list_serial_ports()
+{
+  struct sp_port **port_list;
+  check(sp_list_ports(&port_list));
+  int i;
+  for (i = 0; port_list[i] != NULL; i++)
+    printf("%d: %s\n", i, sp_get_port_name(port_list[i]));
+  printf("%d serial port(s) total\n", i);
+  sp_free_port_list(port_list);
+}
+
+void init_serial()
+{
+  int baud_rate = 115200;
+  check(sp_get_port_by_name("/dev/tty.usbmodem141301", &port));
+  check(sp_open(port, SP_MODE_READ_WRITE));
+  check(sp_set_baudrate(port, baud_rate));
+  check(sp_set_bits(port, 8));
+  check(sp_set_parity(port, SP_PARITY_NONE));
+  check(sp_set_stopbits(port, 1));
+  check(sp_set_flowcontrol(port, SP_FLOWCONTROL_NONE));
+
+  sp_flush(port, SP_BUF_BOTH);
+}
+
 int main()
 {
-  int port = 8000;
+  list_serial_ports();
+  init_serial();
+
+  int tcp_port = 8000;
 
 #if defined(_WIN32) || defined(WIN32)
   WSADATA _wsadata;
@@ -132,7 +199,7 @@ int main()
   // Bind to address and start listening
   struct sockaddr_in addr = { 0 };
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
+  addr.sin_port = htons(tcp_port);
   addr.sin_addr.s_addr = INADDR_ANY;
   if (bind(sock_fd, (struct sockaddr *)&addr, sizeof addr) == -1)
     panic("bind() failed");

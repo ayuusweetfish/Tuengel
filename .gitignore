@@ -1,7 +1,10 @@
 **/fp-info-cache
 **/*.bak
 **/~*.lck
-misc/testrun1_fw/.pio/
+/misc/testrun1_fw/.pio/
+# `libserialport` can be sym links
+/misc/ser-tcp-relay/libserialport
+/misc/ser-tcp-relay/libserialport-win
 subt_fw/build/
 subt_fw/build_release/
 unit_fw/build/
