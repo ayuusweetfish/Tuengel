@@ -6,6 +6,7 @@
 #include "libserialport.h"
 
 #include <errno.h>    // errno
+#include <poll.h>     // poll
 #include <stdbool.h>  // bool
 #include <stdint.h>   // uint*_t
 #include <stdio.h>    // fprintf
@@ -130,30 +131,67 @@ static void serial_write_all(
   }
 }
 
+static pthread_mutex_t serial_buf_mutex;
+static uint8_t serial_buf[1024];
+static size_t serial_buf_n = 0;
+
+static bool dump_all = true;
+
 static void *serve_client(void *arg)
 {
   int conn_fd = *(int *)arg;
   free(arg);
 
   while (1) {
-    uint8_t buf[64];
-    ssize_t n_net_rx = recv(conn_fd, buf, sizeof buf, 0);
-    if (n_net_rx == -1) {
-      warn("recv() failed");
-    } else if (n_net_rx == 0) {
-      info("connection closed");
-      break;
+    uint8_t buf[1024];
+    struct pollfd fd = {
+      .fd = conn_fd,
+      .events = POLLIN,
+    };
+    int poll_result = poll(&fd, 1, 20);
+    if (poll_result == -1) {
+      warn("poll() failed");
+    } else if (poll_result == 0) {
+      // Timeout
     } else {
-      send_all(conn_fd, buf, n_net_rx);
-      // Forward data to serial
-      serial_write_all(port, buf, n_net_rx, 100);
+      // POLLIN: data available
+      ssize_t n_net_rx = recv(conn_fd, buf, sizeof buf, 0);
+      if (n_net_rx == -1) {
+        warn("recv() failed");
+      } else if (n_net_rx == 0) {
+        info("connection closed");
+        break;
+      } else {
+        // Forward data to serial
+        if (dump_all) {
+          printf("tx |");
+          for (size_t i = 0; i < n_net_rx; i++) printf(" %02x", (unsigned)buf[i]);
+          putchar('\n');
+        }
+        serial_write_all(port, buf, n_net_rx, 100);
+      }
+    }
+    // Check serial incoming buffer
+    if (serial_buf_n > 0) {
+      uint8_t local_buf[serial_buf_n];
+      pthread_mutex_lock(&serial_buf_mutex);
+      memcpy(local_buf, serial_buf, serial_buf_n);
+      size_t local_buf_n = serial_buf_n;
+      serial_buf_n = 0;
+      pthread_mutex_unlock(&serial_buf_mutex);
+      if (dump_all) {
+        printf("rx |");
+        for (size_t i = 0; i < local_buf_n; i++) printf(" %02x", (unsigned)local_buf[i]);
+        putchar('\n');
+      }
+      send_all(conn_fd, local_buf, local_buf_n);
     }
   }
 
   return NULL;
 }
 
-void list_serial_ports()
+static void list_serial_ports()
 {
   struct sp_port **port_list;
   check(sp_list_ports(&port_list));
@@ -164,7 +202,25 @@ void list_serial_ports()
   sp_free_port_list(port_list);
 }
 
-void init_serial()
+static void *serial_read(void *_unused)
+{
+  struct sp_event_set *evtset;
+  sp_new_event_set(&evtset);
+  sp_add_port_events(evtset, port, SP_EVENT_RX_READY);
+  while (1) {
+    sp_wait(evtset, 0);
+    pthread_mutex_lock(&serial_buf_mutex);
+    bool full = (serial_buf_n >= sizeof serial_buf);
+    if (!full) {
+      serial_buf_n += sp_nonblocking_read(port,
+        serial_buf + serial_buf_n, (sizeof serial_buf) - serial_buf_n);
+    }
+    pthread_mutex_unlock(&serial_buf_mutex);
+    if (full) usleep(10000);
+  }
+}
+
+static void init_serial()
 {
   int baud_rate = 115200;
   check(sp_get_port_by_name("/dev/tty.usbmodem141301", &port));
@@ -176,6 +232,12 @@ void init_serial()
   check(sp_set_flowcontrol(port, SP_FLOWCONTROL_NONE));
 
   sp_flush(port, SP_BUF_BOTH);
+
+  pthread_mutex_init(&serial_buf_mutex, NULL);
+
+  pthread_t thr;
+  if (pthread_create(&thr, NULL, &serial_read, NULL) != 0)
+    panic("cannot crate thread");
 }
 
 int main()
