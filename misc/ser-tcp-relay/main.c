@@ -6,7 +6,6 @@
 #include "libserialport.h"
 
 #include <errno.h>    // errno
-#include <poll.h>     // poll
 #include <stdbool.h>  // bool
 #include <stdint.h>   // uint*_t
 #include <stdio.h>    // fprintf
@@ -14,11 +13,16 @@
 #include <string.h>   // strerror
 #include <unistd.h>   // usleep, close
 
-#include <pthread.h>
 #if defined(_WIN32) || defined(WIN32)
+#define WINDOWS 1
+#endif
+
+#include <pthread.h>
+#if WINDOWS
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #endif
@@ -50,7 +54,7 @@ static int _check(enum sp_return result, const char *file, int line)
 }
 #define check(_r) _check(_r, __FILE__, __LINE__)
 
-#if defined(_WIN32) || defined(WIN32)
+#if WINDOWS
 static inline int err_code() { return WSAGetLastError(); }
 static inline const char *err_string(int err_code) {
   static char msg[256];
@@ -144,12 +148,25 @@ static void *serve_client(void *arg)
 
   while (1) {
     uint8_t buf[1024];
-    struct pollfd fd = {
-      .fd = conn_fd,
-      .events = POLLIN,
-    };
-    int poll_result = poll(&fd, 1, 20);
-    if (poll_result == -1) {
+    int poll_result;
+#if WINDOWS
+    {
+      WSAPOLLFD poll_fd = {
+        .fd = conn_fd,
+        .events = POLLIN,
+      };
+      poll_result = WSAPoll(&poll_fd, 1, 20);
+    }
+#else
+    {
+      struct pollfd poll_fd = {
+        .fd = conn_fd,
+        .events = POLLIN,
+      };
+      poll_result = poll(&poll_fd, 1, 20);
+    }
+#endif
+    if (poll_result < 0) {
       warn("poll() failed");
     } else if (poll_result == 0) {
       // Timeout
@@ -247,7 +264,7 @@ int main()
 
   int tcp_port = 8000;
 
-#if defined(_WIN32) || defined(WIN32)
+#if WINDOWS
   WSADATA _wsadata;
   if (WSAStartup(0x202, &_wsadata) != 0)
     panic("WSAStartup() failed");
