@@ -24,37 +24,30 @@
 
 static struct sp_port *port;
 
-static int check(enum sp_return result)
+static int _check(enum sp_return result, const char *file, int line)
 {
   char *error_message;
   switch (result) {
   case SP_ERR_ARG:
-    printf("Error: Invalid argument.\n");
+    fprintf(stderr, "sp error | (%s:%d) Invalid argument.\n", file, line);
     abort();
   case SP_ERR_FAIL:
     error_message = sp_last_error_message();
-    printf("Error: Failed: %s\n", error_message);
+    fprintf(stderr, "sp error | (%s:%d) Failed: %s\n", file, line, error_message);
     sp_free_error_message(error_message);
     abort();
   case SP_ERR_SUPP:
-    printf("Error: Not supported.\n");
+    fprintf(stderr, "sp error | (%s:%d) Not supported.\n", file, line);
     abort();
   case SP_ERR_MEM:
-    printf("Error: Couldn't allocate memory.\n");
+    fprintf(stderr, "sp error | (%s:%d) Couldn't allocate memory.\n", file, line);
     abort();
   case SP_OK:
   default:
     return result;
   }
 }
-static void _ensure(bool cond, const char *cond_name, const char *file, int line)
-{
-  if (!cond) {
-    printf("Error: (%s:%d) condition \"%s\" does not hold\n", file, line, cond_name);
-    abort();
-  }
-}
-#define ensure(_cond) _ensure((_cond), #_cond, __FILE__, __LINE__)
+#define check(_r) _check(_r, __FILE__, __LINE__)
 
 #if defined(_WIN32) || defined(WIN32)
 static inline int err_code() { return WSAGetLastError(); }
@@ -127,21 +120,33 @@ static size_t send_all(int fd, const void *buf, size_t len)
   return 0;
 }
 
+static void serial_write_all(
+  struct sp_port *port,
+  const void *restrict buf, size_t len, unsigned timeout)
+{
+  while (len > 0) {
+    int n_ser_tx = check(sp_blocking_write(port, buf, len, timeout));
+    len -= n_ser_tx;
+  }
+}
+
 static void *serve_client(void *arg)
 {
   int conn_fd = *(int *)arg;
   free(arg);
 
   while (1) {
-    uint8_t c;
-    ssize_t result = recv(conn_fd, &c, 1, 0);
-    if (result == -1) {
+    uint8_t buf[64];
+    ssize_t n_net_rx = recv(conn_fd, buf, sizeof buf, 0);
+    if (n_net_rx == -1) {
       warn("recv() failed");
-    } else if (result == 0) {
+    } else if (n_net_rx == 0) {
       info("connection closed");
       break;
     } else {
-      send_all(conn_fd, &c, 1);
+      send_all(conn_fd, buf, n_net_rx);
+      // Forward data to serial
+      serial_write_all(port, buf, n_net_rx, 100);
     }
   }
 
