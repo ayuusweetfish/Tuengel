@@ -1,7 +1,7 @@
 // clang main.c -DLOG_INFO -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
 
 // (cd libserialport-win && ./configure --host=x86_64-w64-mingw32 && make)
-// x86_64-w64-mingw32-gcc main.c -DLOG_INFO -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi
+// x86_64-w64-mingw32-gcc main.c -DLOG_INFO -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi -O2
 
 #include "libserialport.h"
 
@@ -10,6 +10,7 @@
 #define _GNU_SOURCE   // asprintf in stdio.h
 #endif
 
+#include <ctype.h>    // isspace
 #include <errno.h>    // errno
 #include <stdbool.h>  // bool
 #include <stdint.h>   // uint*_t
@@ -271,6 +272,49 @@ int main(int argc, char *argv[])
   const char *serial_port_name = NULL;
   int baud_rate = 115200;
   int tcp_port = 8000;
+
+  if (argc <= 1) {
+    FILE *config_file = fopen("ser-tcp-relay.txt", "r");
+    if (config_file) {
+      int argv_cap = 16;
+      char **config_argv = malloc(sizeof(char *) * argv_cap);
+      int config_argc = 0;
+      config_argv[config_argc++] = argv[0];
+      int c;
+      // Skip over leading spaces
+      for (c = fgetc(config_file); isspace(c) && c != EOF; c = fgetc(config_file)) { }
+      while (c != EOF) {
+        int cap = 16;
+        char *w = malloc(cap);
+        int j;
+        for (j = 0; !isspace(c) && c != EOF; j++, c = fgetc(config_file)) {
+          if (j >= cap) w = realloc(w, cap <<= 1);
+          w[j] = c;
+        }
+        w[j] = '\0';
+        // Append to argument list
+        if (config_argc >= argv_cap)
+          config_argv = malloc(sizeof(char *) * (argv_cap <<= 1));
+        config_argv[config_argc++] = w;
+        // Skip over trailing spaces
+        for (c = fgetc(config_file); isspace(c) && c != EOF; c = fgetc(config_file)) { }
+      }
+      argc = config_argc;
+      argv = config_argv;
+      // Print info
+      int total_len = 0;
+      for (int i = 1; i < argc; i++) total_len += strlen(argv[i]) + 1;
+      char *msg = malloc(total_len + 36);
+      msg[0] = '\0';
+      strcat(msg, "reading arguments from config file:");
+      for (int i = 1; i < argc; i++) {
+        strcat(msg, " ");
+        strcat(msg, argv[i]);
+      }
+      info(msg);
+      free(msg);
+    }
+  }
 
   int opt;
   while ((opt = getopt(argc, argv, "b:p:")) != -1) {
