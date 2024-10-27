@@ -1,7 +1,7 @@
-// clang main.c -DLOG_INFO -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
+// clang main.c -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
 
 // (cd libserialport-win && ./configure --host=x86_64-w64-mingw32 && make)
-// x86_64-w64-mingw32-gcc main.c -DLOG_INFO -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi -O2
+// x86_64-w64-mingw32-gcc main.c -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi -O2
 
 #include "libserialport.h"
 
@@ -88,6 +88,8 @@ static inline int err_code() { return errno; }
 static inline const char *err_string(int err_code) { return strerror(err_code); }
 #endif
 
+static bool log_debug = false;
+
 static inline void panic(const char *msg)
 {
   int e = err_code();
@@ -97,15 +99,16 @@ static inline void panic(const char *msg)
 static inline void warn(const char *msg)
 {
   int e = err_code();
-#if defined(LOG_WARN) || defined(LOG_INFO)
   fprintf(stderr, "warn  | %s: errno = %d (%s)\n", msg, e, err_string(e));
-#endif
 }
 static inline void info(const char *msg)
 {
-#ifdef LOG_INFO
   fprintf(stderr, "info  | %s\n", msg);
-#endif
+}
+static inline void debug(const char *msg)
+{
+  if (log_debug)
+    fprintf(stderr, "debug | %s\n", msg);
 }
 
 static size_t send_all(int fd, const void *buf, size_t len)
@@ -178,7 +181,7 @@ static void *serve_client(void *arg)
       if (n_net_rx == -1) {
         warn("recv() failed");
       } else if (n_net_rx == 0) {
-        info("connection closed");
+        debug("connection closed");
         break;
       } else {
         // Forward data to serial
@@ -261,7 +264,7 @@ static void init_serial(const char *port_name, unsigned baud_rate)
 static void print_usage_and_exit(const char *prog_name)
 {
   // Permutation of `argv` by `getopt()` is a GNU extension
-  fprintf(stderr, "Usage: %s [-b <baud-rate>] [-p <tcp-port>] <serial-port>\n\n",
+  fprintf(stderr, "Usage: %s [-b <baud-rate>] [-p <tcp-port>] [-d] <serial-port>\n\n",
     prog_name ? prog_name : "<prog-name>");
   list_serial_ports();
   exit(1);
@@ -317,13 +320,17 @@ int main(int argc, char *argv[])
   }
 
   int opt;
-  while ((opt = getopt(argc, argv, "b:p:")) != -1) {
+  while ((opt = getopt(argc, argv, "b:p:d")) != -1) {
     switch (opt) {
     case 'b':
       baud_rate = strtol(optarg, NULL, 0);
       break;
     case 'p':
       tcp_port = strtol(optarg, NULL, 0);
+      break;
+    case 'd':
+      log_debug = true;
+      dump_all = true;
       break;
     default:
       print_usage_and_exit(argv[0]);
