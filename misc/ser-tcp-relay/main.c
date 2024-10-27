@@ -5,17 +5,18 @@
 
 #include "libserialport.h"
 
+#if defined(_WIN32) || defined(WIN32)
+#define WINDOWS 1
+#define _GNU_SOURCE   // asprintf in stdio.h
+#endif
+
 #include <errno.h>    // errno
 #include <stdbool.h>  // bool
 #include <stdint.h>   // uint*_t
 #include <stdio.h>    // fprintf
 #include <stdlib.h>   // malloc
 #include <string.h>   // strerror
-#include <unistd.h>   // usleep, close
-
-#if defined(_WIN32) || defined(WIN32)
-#define WINDOWS 1
-#endif
+#include <unistd.h>   // usleep, close, getopt
 
 #include <pthread.h>
 #if WINDOWS
@@ -214,8 +215,8 @@ static void list_serial_ports()
   check(sp_list_ports(&port_list));
   int i;
   for (i = 0; port_list[i] != NULL; i++)
-    printf("%d: %s\n", i, sp_get_port_name(port_list[i]));
-  printf("%d serial port(s) total\n", i);
+    fprintf(stderr, "%d: %s\n", i, sp_get_port_name(port_list[i]));
+  fprintf(stderr, "%d serial port(s) total\n", i);
   sp_free_port_list(port_list);
 }
 
@@ -237,10 +238,9 @@ static void *serial_read(void *_unused)
   }
 }
 
-static void init_serial()
+static void init_serial(const char *port_name, unsigned baud_rate)
 {
-  int baud_rate = 115200;
-  check(sp_get_port_by_name("/dev/tty.usbmodem141301", &port));
+  check(sp_get_port_by_name(port_name, &port));
   check(sp_open(port, SP_MODE_READ_WRITE));
   check(sp_set_baudrate(port, baud_rate));
   check(sp_set_bits(port, 8));
@@ -257,12 +257,44 @@ static void init_serial()
     panic("cannot crate thread");
 }
 
-int main()
+static void print_usage_and_exit(const char *prog_name)
 {
+  // Permutation of `argv` by `getopt()` is a GNU extension
+  fprintf(stderr, "Usage: %s [-b <baud-rate>] [-p <tcp-port>] <serial-port>\n\n",
+    prog_name ? prog_name : "<prog-name>");
   list_serial_ports();
-  init_serial();
+  exit(1);
+}
 
+int main(int argc, char *argv[])
+{
+  const char *serial_port_name = NULL;
+  int baud_rate = 115200;
   int tcp_port = 8000;
+
+  int opt;
+  while ((opt = getopt(argc, argv, "b:p:")) != -1) {
+    switch (opt) {
+    case 'b':
+      baud_rate = strtol(optarg, NULL, 0);
+      break;
+    case 'p':
+      tcp_port = strtol(optarg, NULL, 0);
+      break;
+    default:
+      print_usage_and_exit(argv[0]);
+      break;
+    }
+  }
+  if (optind >= argc) print_usage_and_exit(argv[0]);
+
+  serial_port_name = argv[optind];
+  init_serial(serial_port_name, baud_rate);
+
+  char *msg;
+  asprintf(&msg, "open serial port %s with baud rate %d", serial_port_name, baud_rate);
+  info(msg);
+  free(msg);
 
 #if WINDOWS
   WSADATA _wsadata;
@@ -290,7 +322,9 @@ int main()
   if (listen(sock_fd, 1024) == -1)
     panic("listen() failed");
 
-  info("accepting connections");
+  asprintf(&msg, "accepting connections at TCP port %d", tcp_port);
+  info(msg);
+  free(msg);
 
   // Accept connections
   struct sockaddr_in cli_addr;
