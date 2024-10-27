@@ -1,7 +1,7 @@
-// clang main.c -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
+// clang main.c "-DBUILD_REV=\"$(git log --pretty=format:'%h - %ad' --date=iso -n 1)\"" -Ilibserialport libserialport/.libs/libserialport.a -framework Foundation -framework IOKit
 
 // (cd libserialport-win && ./configure --host=x86_64-w64-mingw32 && make)
-// x86_64-w64-mingw32-gcc main.c -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi -O2
+// x86_64-w64-mingw32-gcc "-DBUILD_REV=\"$(git log --pretty=format:'%h - %ad' --date=iso -n 1)\"" main.c -lws2_32 -static -Ilibserialport libserialport-win/.libs/libserialport.a -lsetupapi -O2 -o ser-tcp-relay.exe && x86_64-w64-mingw32-strip ser-tcp-relay.exe
 
 #include "libserialport.h"
 
@@ -272,6 +272,10 @@ static void print_usage_and_exit(const char *prog_name)
 
 int main(int argc, char *argv[])
 {
+#ifdef BUILD_REV
+  fprintf(stderr, "[Tuengel] Serial-TCP relay, build " BUILD_REV "\n");
+#endif
+
   const char *serial_port_name = NULL;
   int baud_rate = 115200;
   int tcp_port = 8000;
