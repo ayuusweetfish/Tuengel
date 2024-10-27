@@ -275,8 +275,8 @@ int main(int argc, char *argv[])
 
   if (argc <= 1) {
     FILE *config_file = fopen("ser-tcp-relay.txt", "r");
-    if (config_file) {
-      int argv_cap = 16;
+    if (config_file != NULL) {
+      int argv_cap = 8;
       char **config_argv = malloc(sizeof(char *) * argv_cap);
       int config_argc = 0;
       config_argv[config_argc++] = argv[0];
@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
         w[j] = '\0';
         // Append to argument list
         if (config_argc >= argv_cap)
-          config_argv = malloc(sizeof(char *) * (argv_cap <<= 1));
+          config_argv = realloc(config_argv, sizeof(char *) * (argv_cap <<= 1));
         config_argv[config_argc++] = w;
         // Skip over trailing spaces
         for (c = fgetc(config_file); isspace(c) && c != EOF; c = fgetc(config_file)) { }
