@@ -105,6 +105,10 @@ static inline void warn(const char *msg)
   int e = err_code();
   fprintf(stderr, "warn  | %s: errno = %d (%s)\n", msg, e, err_string(e));
 }
+static inline void warn_custom(const char *msg)
+{
+  fprintf(stderr, "warn  | %s\n", msg);
+}
 static inline void info(const char *msg)
 {
   fprintf(stderr, "info  | %s\n", msg);
@@ -158,37 +162,63 @@ static void locked_serial_write_all(const uint8_t *restrict buf, size_t len)
   pthread_mutex_unlock(&serial_port_mutex);
 }
 
-struct buffer_with_len {
-  uint8_t *buf;
-  size_t len;
+static pthread_mutex_t bpm_mutex;
+static uint8_t global_bpm = 0;
+
+static const uint8_t mapped_locations[6][2] = {
+  {0x01, 0x01},
+  {0x01, 0x04},
+  {0x01, 0x05},
+  {0x00, 0x01},
+  {0x00, 0x02},
+  {0x00, 0x04},
 };
-static void *process_and_tx_thr(void *_arg)
+static uint32_t seed = 20241028;
+static inline uint32_t my_rand()
 {
-  struct buffer_with_len arg = *(struct buffer_with_len *)_arg;
-  free(_arg);
-
-  uint8_t *buf = arg.buf;
-  size_t len = arg.len;
-
-  locked_serial_write_all(buf, len);
-  usleep(3000000);
-  locked_serial_write_all(buf, len);
-
-  free(buf);
-  return NULL;
+  seed = seed * 1103515245 + 12345;
+  return seed & 0x7fffffff;
+}
+static void *random_loop(void *_unused)
+{
+  while (true) {
+    pthread_mutex_lock(&bpm_mutex);
+    uint8_t bpm = global_bpm;
+    pthread_mutex_unlock(&bpm_mutex);
+    if (bpm > 0) {
+      uint8_t id = my_rand() % (sizeof mapped_locations / sizeof mapped_locations[0]);
+      uint8_t o_buf[3] = {0x02, mapped_locations[id][0], mapped_locations[id][1]};
+      locked_serial_write_all(o_buf, 3);
+      uint32_t delay_us = (30000000 + (int)my_rand() % 60000000) / bpm;
+      usleep(delay_us);
+    } else {
+      usleep(100000); // Sleep 100 ms
+    }
+  }
 }
 
 static void process_and_tx(const uint8_t *restrict buf, size_t len)
 {
-  // XXX: Change this!
-  struct buffer_with_len *arg = malloc(sizeof(struct buffer_with_len));
-  arg->buf = malloc(len);
-  memcpy(arg->buf, buf, len);
-  arg->len = len;
-
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, &process_and_tx_thr, arg) != 0) {
-    warn("cannot create thread for delayed transmission");
+  // XXX: Subject to change
+  for (size_t i = 0; i < len; i++) {
+    uint8_t byte = buf[i];
+    if (byte >= 0x01 && byte <= 0x06) {
+      uint8_t id = byte - 0x01;
+      uint8_t o_buf[3] = {0x02, mapped_locations[id][0], mapped_locations[id][1]};
+      locked_serial_write_all(o_buf, 3);
+    } else if (byte >= 0x80 && byte <= 0xfe) {
+      uint8_t bpm = byte - 0x80;
+      pthread_mutex_lock(&bpm_mutex);
+      global_bpm = bpm;
+      pthread_mutex_unlock(&bpm_mutex);
+      char msg[64];
+      snprintf(msg, sizeof msg, "changed random BPM to %u", (unsigned)bpm);
+      debug(msg);
+    } else {
+      char msg[64];
+      snprintf(msg, sizeof msg, "unrecognised byte 0x%02x", (unsigned)byte);
+      warn_custom(msg);
+    }
   }
 }
 
@@ -395,8 +425,7 @@ int main(int argc, char *argv[])
   serial_port_name = argv[optind];
 
   if (global_retry) {
-    errno = 0;
-    warn("global retry has not been implemented > <");
+    warn_custom("global retry has not been implemented > <");
   }
 
   init_serial(serial_port_name, baud_rate);
@@ -406,6 +435,12 @@ int main(int argc, char *argv[])
   asprintf(&msg, "open serial port %s with baud rate %d", serial_port_name, baud_rate);
   info(msg);
   free(msg);
+
+  pthread_mutex_init(&bpm_mutex, NULL);
+  pthread_t random_thr;
+  if (pthread_create(&random_thr, NULL, &random_loop, NULL) != 0) {
+    panic("cannot create thread for random triggers");
+  }
 
 #if WINDOWS
   WSADATA _wsadata;
