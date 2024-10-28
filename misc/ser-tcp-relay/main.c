@@ -186,11 +186,18 @@ static void *random_loop(void *_unused)
     uint8_t bpm = global_bpm;
     pthread_mutex_unlock(&bpm_mutex);
     if (bpm > 0) {
-      uint8_t id = my_rand() % (sizeof mapped_locations / sizeof mapped_locations[0]);
-      uint8_t o_buf[3] = {0x02, mapped_locations[id][0], mapped_locations[id][1]};
-      locked_serial_write_all(o_buf, 3);
-      uint32_t delay_us = (30000000 + (int)my_rand() % 60000000) / bpm;
-      usleep(delay_us);
+      uint8_t count = (my_rand() >> 4) % 7 + 10;
+      uint8_t normalised_count = count * bpm / 20;
+      for (uint8_t i = 0; i < normalised_count; i++) {
+        uint8_t id = (my_rand() >> 4) % (sizeof mapped_locations / sizeof mapped_locations[0]);
+        uint8_t o_buf[3] = {0x02, mapped_locations[id][0], mapped_locations[id][1]};
+        locked_serial_write_all(o_buf, 3);
+        uint8_t fade_out = 8;
+        if (i > normalised_count - 4) fade_out += (i - (normalised_count - 4)) * 2;
+        uint32_t delay_us = (10000000 + (int)my_rand() % 20000000) * fade_out / (8 * bpm);
+        usleep(delay_us);
+      }
+      usleep(5000000 + my_rand() % 5000000);
     } else {
       usleep(100000); // Sleep 100 ms
     }
