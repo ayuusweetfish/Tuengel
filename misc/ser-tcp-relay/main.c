@@ -29,6 +29,9 @@
 #include <sys/types.h>
 #endif
 
+static void my_abort();
+
+static bool global_retry = false;
 static struct sp_port *port;
 
 static int _check(enum sp_return result, const char *file, int line)
@@ -37,18 +40,18 @@ static int _check(enum sp_return result, const char *file, int line)
   switch (result) {
   case SP_ERR_ARG:
     fprintf(stderr, "sp error | (%s:%d) Invalid argument.\n", file, line);
-    abort();
+    my_abort();
   case SP_ERR_FAIL:
     error_message = sp_last_error_message();
     fprintf(stderr, "sp error | (%s:%d) Failed: %s\n", file, line, error_message);
     sp_free_error_message(error_message);
-    abort();
+    my_abort();
   case SP_ERR_SUPP:
     fprintf(stderr, "sp error | (%s:%d) Not supported.\n", file, line);
-    abort();
+    my_abort();
   case SP_ERR_MEM:
     fprintf(stderr, "sp error | (%s:%d) Couldn't allocate memory.\n", file, line);
-    abort();
+    my_abort();
   case SP_OK:
   default:
     return result;
@@ -94,7 +97,7 @@ static inline void panic(const char *msg)
 {
   int e = err_code();
   fprintf(stderr, "panic | %s: errno = %d (%s)\n", msg, e, err_string(e));
-  exit(1);
+  my_abort();
 }
 static inline void warn(const char *msg)
 {
@@ -144,7 +147,7 @@ static pthread_mutex_t serial_buf_mutex;
 static uint8_t serial_buf[1024];
 static size_t serial_buf_n = 0;
 
-static bool dump_all = true;
+static bool dump_all = false;
 
 static void *serve_client(void *arg)
 {
@@ -251,6 +254,7 @@ static void init_serial(const char *port_name, unsigned baud_rate)
   check(sp_set_parity(port, SP_PARITY_NONE));
   check(sp_set_stopbits(port, 1));
   check(sp_set_flowcontrol(port, SP_FLOWCONTROL_NONE));
+  check(sp_set_dtr(port, SP_DTR_ON));
 
   sp_flush(port, SP_BUF_BOTH);
 
@@ -264,7 +268,7 @@ static void init_serial(const char *port_name, unsigned baud_rate)
 static void print_usage_and_exit(const char *prog_name)
 {
   // Permutation of `argv` by `getopt()` is a GNU extension
-  fprintf(stderr, "Usage: %s [-b <baud-rate>] [-p <tcp-port>] [-d] <serial-port>\n\n",
+  fprintf(stderr, "Usage: %s [-b <baud-rate>] [-p <tcp-port>] [-d] [-r] <serial-port>\n\n",
     prog_name ? prog_name : "<prog-name>");
   list_serial_ports();
   exit(1);
@@ -324,7 +328,7 @@ int main(int argc, char *argv[])
   }
 
   int opt;
-  while ((opt = getopt(argc, argv, "b:p:d")) != -1) {
+  while ((opt = getopt(argc, argv, "b:p:dr")) != -1) {
     switch (opt) {
     case 'b':
       baud_rate = strtol(optarg, NULL, 0);
@@ -336,6 +340,9 @@ int main(int argc, char *argv[])
       log_debug = true;
       dump_all = true;
       break;
+    case 'r':
+      global_retry = true;
+      break;
     default:
       print_usage_and_exit(argv[0]);
       break;
@@ -344,6 +351,12 @@ int main(int argc, char *argv[])
   if (optind >= argc) print_usage_and_exit(argv[0]);
 
   serial_port_name = argv[optind];
+
+  if (global_retry) {
+    errno = 0;
+    warn("global retry has not been implemented > <");
+  }
+
   init_serial(serial_port_name, baud_rate);
 
   char *msg;
@@ -403,4 +416,9 @@ int main(int argc, char *argv[])
   }
 
   return 0;
+}
+
+void my_abort()
+{
+  exit(1);
 }
