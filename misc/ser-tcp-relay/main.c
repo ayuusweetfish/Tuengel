@@ -144,28 +144,57 @@ static void serial_write_all(
   }
 }
 
-static void locked_serial_write_all(const void *restrict buf, size_t len)
+static bool dump_all = false;
+
+static void locked_serial_write_all(const uint8_t *restrict buf, size_t len)
 {
+  if (dump_all) {
+    printf("tx |");
+    for (size_t i = 0; i < len; i++) printf(" %02x", (unsigned)buf[i]);
+    putchar('\n');
+  }
   pthread_mutex_lock(&serial_port_mutex);
   serial_write_all(port, buf, len, 100);
   pthread_mutex_unlock(&serial_port_mutex);
 }
 
-static uint8_t *filter_rx(const uint8_t *restrict buf, size_t len, size_t *restrict o_len)
+struct buffer_with_len {
+  uint8_t *buf;
+  size_t len;
+};
+static void *process_and_tx_thr(void *_arg)
+{
+  struct buffer_with_len arg = *(struct buffer_with_len *)_arg;
+  free(_arg);
+
+  uint8_t *buf = arg.buf;
+  size_t len = arg.len;
+
+  locked_serial_write_all(buf, len);
+  usleep(3000000);
+  locked_serial_write_all(buf, len);
+
+  free(buf);
+  return NULL;
+}
+
+static void process_and_tx(const uint8_t *restrict buf, size_t len)
 {
   // XXX: Change this!
-  uint8_t *o_buf = malloc(len);
-  memcpy(o_buf, buf, len);
-  if (0) for (size_t i = 0; i < len; i++) o_buf[i]++;
-  *o_len = len;
-  return o_buf;
+  struct buffer_with_len *arg = malloc(sizeof(struct buffer_with_len));
+  arg->buf = malloc(len);
+  memcpy(arg->buf, buf, len);
+  arg->len = len;
+
+  pthread_t thr;
+  if (pthread_create(&thr, NULL, &process_and_tx_thr, arg) != 0) {
+    warn("cannot create thread for delayed transmission");
+  }
 }
 
 static pthread_mutex_t serial_buf_mutex;
 static uint8_t serial_buf[1024];
 static size_t serial_buf_n = 0;
-
-static bool dump_all = false;
 
 static void *serve_client(void *arg)
 {
@@ -206,15 +235,7 @@ static void *serve_client(void *arg)
         break;
       } else {
         // Forward data to serial
-        size_t n_filtered;
-        uint8_t *buf_filtered = filter_rx(buf, n_net_rx, &n_filtered);
-        if (dump_all) {
-          printf("tx |");
-          for (size_t i = 0; i < n_filtered; i++) printf(" %02x", (unsigned)buf_filtered[i]);
-          putchar('\n');
-        }
-        locked_serial_write_all(buf_filtered, n_filtered);
-        free(buf_filtered);
+        process_and_tx(buf, n_net_rx);
       }
     }
     // Check serial incoming buffer
