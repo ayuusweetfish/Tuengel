@@ -32,6 +32,7 @@
 static void my_abort();
 
 static bool global_retry = false;
+static pthread_mutex_t serial_port_mutex;
 static struct sp_port *port;
 
 static int _check(enum sp_return result, const char *file, int line)
@@ -143,6 +144,23 @@ static void serial_write_all(
   }
 }
 
+static void locked_serial_write_all(const void *restrict buf, size_t len)
+{
+  pthread_mutex_lock(&serial_port_mutex);
+  serial_write_all(port, buf, len, 100);
+  pthread_mutex_unlock(&serial_port_mutex);
+}
+
+static uint8_t *filter_rx(const uint8_t *restrict buf, size_t len, size_t *restrict o_len)
+{
+  // XXX: Change this!
+  uint8_t *o_buf = malloc(len);
+  memcpy(o_buf, buf, len);
+  if (0) for (size_t i = 0; i < len; i++) o_buf[i]++;
+  *o_len = len;
+  return o_buf;
+}
+
 static pthread_mutex_t serial_buf_mutex;
 static uint8_t serial_buf[1024];
 static size_t serial_buf_n = 0;
@@ -188,12 +206,15 @@ static void *serve_client(void *arg)
         break;
       } else {
         // Forward data to serial
+        size_t n_filtered;
+        uint8_t *buf_filtered = filter_rx(buf, n_net_rx, &n_filtered);
         if (dump_all) {
           printf("tx |");
-          for (size_t i = 0; i < n_net_rx; i++) printf(" %02x", (unsigned)buf[i]);
+          for (size_t i = 0; i < n_filtered; i++) printf(" %02x", (unsigned)buf_filtered[i]);
           putchar('\n');
         }
-        serial_write_all(port, buf, n_net_rx, 100);
+        locked_serial_write_all(buf_filtered, n_filtered);
+        free(buf_filtered);
       }
     }
     // Check serial incoming buffer
@@ -358,6 +379,7 @@ int main(int argc, char *argv[])
   }
 
   init_serial(serial_port_name, baud_rate);
+  pthread_mutex_init(&serial_port_mutex, NULL);
 
   char *msg;
   asprintf(&msg, "open serial port %s with baud rate %d", serial_port_name, baud_rate);
