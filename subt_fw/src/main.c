@@ -415,22 +415,6 @@ int main()
   uart_rx_program_init(pio0, sm_uart_dnstrm_rx, uart_rx_program_offset, 115200);
   dnstrm_dir(0, -1);
 
-  while (0) {
-    static bool parity = 0;
-    gpio_put(ACT_1, parity ^= 1);
-    uint8_t dnstrm_msg[2] = {0x09, parity ? 0x80 : 0x82};
-    serial_tx(0x00, dnstrm_msg, 2);
-    bool check_ack(uint8_t len, const uint8_t *buf) {
-      my_printf("[%02x]", len);
-      for (int i = 0; i < len; i++) my_printf(" %02x", (unsigned)buf[i]);
-      my_printf("\n");
-      return true;
-    }
-    bool result = serial_rx_blocking(0x00, 20000, check_ack);
-    my_printf("result %u\n", (unsigned)result);
-    sleep_ms(1000);
-  }
-
   while (1) {
     static bool parity = 0;
     static int count = 0;
